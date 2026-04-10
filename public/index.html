@@ -174,6 +174,32 @@
         @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 5px var(--green), inset 0 0 5px rgba(0,255,0,0.3); } 50% { box-shadow: 0 0 15px var(--green), inset 0 0 8px rgba(0,255,0,0.5); } }
         .org-card.on-floor { border-color: var(--green); border-width: 3px; box-shadow: 0 0 20px rgba(0,255,0,0.3); }
 
+        /* SICK — bright red glow, huge overlay */
+        .org-card.sick { border: 3px solid #ff3030; background: linear-gradient(145deg,#fff5f5,#ffd0d0); box-shadow: 0 0 24px 4px rgba(255,40,40,0.75), inset 0 0 30px rgba(255,40,40,0.25); animation: sick-pulse 1.8s ease-in-out infinite; position: relative; overflow: hidden; }
+        .org-card.sick::after { content: "SICK"; position: absolute; top: 4px; right: 6px; font-size: 26px; font-weight: 900; letter-spacing: 2px; color: #c62828; text-shadow: 0 0 6px rgba(255,40,40,0.8), 0 1px 0 #fff; background: rgba(255,255,255,0.85); padding: 2px 10px; border-radius: 6px; border: 2px solid #ff3030; pointer-events: none; }
+        .org-card.sick .card-name, .org-card.sick .card-role { color: #b71c1c !important; }
+        @keyframes sick-pulse { 0%,100% { box-shadow: 0 0 20px 3px rgba(255,40,40,0.6), inset 0 0 25px rgba(255,40,40,0.2); } 50% { box-shadow: 0 0 32px 6px rgba(255,40,40,0.95), inset 0 0 35px rgba(255,40,40,0.35); } }
+
+        /* PTO — bright yellow/orange glow, huge overlay */
+        .org-card.pto { border: 3px solid #ffb300; background: linear-gradient(145deg,#fffbe6,#ffecb3); box-shadow: 0 0 24px 4px rgba(255,179,0,0.75), inset 0 0 30px rgba(255,179,0,0.25); animation: pto-pulse 1.8s ease-in-out infinite; position: relative; overflow: hidden; }
+        .org-card.pto::after { content: "PTO"; position: absolute; top: 4px; right: 6px; font-size: 26px; font-weight: 900; letter-spacing: 2px; color: #e65100; text-shadow: 0 0 6px rgba(255,179,0,0.8), 0 1px 0 #fff; background: rgba(255,255,255,0.85); padding: 2px 10px; border-radius: 6px; border: 2px solid #ffb300; pointer-events: none; }
+        .org-card.pto .card-name, .org-card.pto .card-role { color: #bf360c !important; }
+        @keyframes pto-pulse { 0%,100% { box-shadow: 0 0 20px 3px rgba(255,179,0,0.6), inset 0 0 25px rgba(255,179,0,0.2); } 50% { box-shadow: 0 0 32px 6px rgba(255,179,0,0.95), inset 0 0 35px rgba(255,179,0,0.35); } }
+
+        /* Area chips — sick / pto */
+        .area-avatar-chip.sick { border: 2px solid #ff3030; background: linear-gradient(135deg,#ffebee,#ffcdd2); box-shadow: 0 0 14px rgba(255,40,40,0.7); color: #b71c1c; font-weight: 900; }
+        .area-avatar-chip.sick::before { content: "SICK"; font-size: 11px; font-weight: 900; color: #fff; background: #d32f2f; padding: 2px 8px; border-radius: 10px; margin-right: 2px; letter-spacing: 1px; }
+        .area-avatar-chip.pto { border: 2px solid #ffb300; background: linear-gradient(135deg,#fff8e1,#ffe082); box-shadow: 0 0 14px rgba(255,179,0,0.7); color: #bf360c; font-weight: 900; }
+        .area-avatar-chip.pto::before { content: "PTO"; font-size: 11px; font-weight: 900; color: #fff; background: #ef6c00; padding: 2px 8px; border-radius: 10px; margin-right: 2px; letter-spacing: 1px; }
+
+        /* Database table rows — sick / pto */
+        tr.row-sick td { background: rgba(255,40,40,0.18) !important; box-shadow: inset 4px 0 0 #ff3030; }
+        tr.row-sick td strong { color: #ff5252 !important; text-shadow: 0 0 4px rgba(255,40,40,0.6); }
+        tr.row-pto td { background: rgba(255,179,0,0.18) !important; box-shadow: inset 4px 0 0 #ffb300; }
+        tr.row-pto td strong { color: #ffb300 !important; text-shadow: 0 0 4px rgba(255,179,0,0.6); }
+        .card-status.badge-sick { background: #ff3030 !important; color: #fff !important; font-size: 14px !important; font-weight: 900 !important; padding: 6px 14px !important; letter-spacing: 2px; box-shadow: 0 0 12px rgba(255,40,40,0.8); animation: sick-pulse 1.8s infinite; }
+        .card-status.badge-pto { background: #ffb300 !important; color: #000 !important; font-size: 14px !important; font-weight: 900 !important; padding: 6px 14px !important; letter-spacing: 2px; box-shadow: 0 0 12px rgba(255,179,0,0.8); animation: pto-pulse 1.8s infinite; }
+
         /* CHANGE AVATAR BUTTON */
         .btn-change-avatar { background: var(--dl-green); color: #000; border: none; border-radius: 50%; width: 32px; height: 32px; font-size: 10px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; margin-left: 8px; }
         .btn-change-avatar:hover { background: #01e680; }
@@ -342,9 +368,9 @@
         <p style="color:#8090b8; font-size:12px;" id="moveModalName"></p>
         <p style="color:#8090b8; font-size:11px;" id="moveModalCurrent"></p>
         <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
-            <button onclick="openPromoteModal(currentModalAgent);closeModal('moveModal');" style="background:rgba(1,204,116,0.2); border:1px solid #01CC74; color:#01CC74; padding:14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:bold; text-align:left;">MOVE TO DIFFERENT LEVEL<br><span style="font-size:10px; font-weight:normal; opacity:0.7;">Reassign to another position on the ladder</span></button>
-            <button onclick="openPromotionLogModal(currentModalAgent);closeModal('moveModal');" style="background:rgba(0,200,83,0.2); border:1px solid #01CC74; color:#01CC74; padding:14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:bold; text-align:left;">PROMOTED<br><span style="font-size:10px; font-weight:normal; opacity:0.7;">Log a promotion and move up the ladder</span></button>
-            <button onclick="openTerminateModal(currentModalAgent);closeModal('moveModal');" style="background:rgba(255,68,68,0.2); border:1px solid #ff4444; color:#ff4444; padding:14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:bold; text-align:left;">NO LONGER WITH COMPANY<br><span style="font-size:10px; font-weight:normal; opacity:0.7;">Terminated, resigned, or transferred out</span></button>
+            <button onclick="var _idx=currentModalAgent;closeModal('moveModal');openPromoteModal(_idx);" style="background:rgba(1,204,116,0.2); border:1px solid #01CC74; color:#01CC74; padding:14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:bold; text-align:left;">MOVE TO DIFFERENT LEVEL<br><span style="font-size:10px; font-weight:normal; opacity:0.7;">Reassign to another position on the ladder</span></button>
+            <button onclick="var _idx=currentModalAgent;closeModal('moveModal');openPromotionLogModal(_idx);" style="background:rgba(0,200,83,0.2); border:1px solid #01CC74; color:#01CC74; padding:14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:bold; text-align:left;">PROMOTED<br><span style="font-size:10px; font-weight:normal; opacity:0.7;">Log a promotion and move up the ladder</span></button>
+            <button onclick="var _idx=currentModalAgent;closeModal('moveModal');openTerminateModal(_idx);" style="background:rgba(255,68,68,0.2); border:1px solid #ff4444; color:#ff4444; padding:14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:bold; text-align:left;">NO LONGER WITH COMPANY<br><span style="font-size:10px; font-weight:normal; opacity:0.7;">Terminated, resigned, or transferred out</span></button>
         </div>
         <div class="modal-actions" style="margin-top:15px;">
             <button onclick="closeModal('moveModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
@@ -422,6 +448,22 @@
         <div class="modal-actions">
             <button onclick="closeModal('spotModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
             <button onclick="saveSpot()" style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;">ADD SPOT</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="areaModal">
+    <div class="modal">
+        <h2 id="areaModalTitle" style="color:#01CC74;">ADD AREA</h2>
+        <p style="color:#8090b8; font-size:12px;">Name the new section and pick a color. You can rename or delete it later.</p>
+        <div style="margin-bottom:15px;"><label>Area Name</label><input type="text" id="areaNameInput" placeholder="e.g. Support Bullpen" maxlength="40"></div>
+        <div style="margin-bottom:15px;"><label>Color</label>
+            <div id="areaColorPicker" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;"></div>
+            <input type="hidden" id="areaColorValue" value="#01CC74">
+        </div>
+        <div class="modal-actions">
+            <button onclick="closeModal('areaModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
+            <button id="areaModalSaveBtn" onclick="saveAreaModal()" style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;">SAVE AREA</button>
         </div>
     </div>
 </div>
@@ -532,12 +574,22 @@ function setupRealtime() {
         .subscribe();
 }
 var _reloadTimer = null;
+var _reloadPending = false;
 function reloadQuiet() {
-    // Debounce realtime reloads (300ms)
+    // Debounce realtime reloads (400ms)
     clearTimeout(_reloadTimer);
+    _reloadPending = true;
     _reloadTimer = setTimeout(async function() {
-        // Preserve local UI state (editing flags, open tray) across the reload,
-        // keyed by agent id so it survives array reorders.
+        // SAFETY: never reload while a modal is open or while a drag is in progress,
+        // because either can cause currentModalAgent / dragAgentIdx to point at the wrong
+        // row after the agents array is replaced. Retry shortly.
+        var openModal = document.querySelector('.modal-overlay.show');
+        var dragging = document.querySelector('.dragging');
+        if (openModal || dragging) {
+            _reloadTimer = setTimeout(reloadQuiet, 500);
+            return;
+        }
+        // Preserve local UI state across the reload, keyed by agent ID.
         var editingIds = {};
         agents.forEach(function(a){ if(a && a.editing) editingIds[a.id] = true; });
         var openTrayId = null;
@@ -547,16 +599,15 @@ function reloadQuiet() {
             if (!isNaN(trayIdx) && agents[trayIdx]) openTrayId = agents[trayIdx].id;
         }
         await initData();
-        // Restore editing flags
         agents.forEach(function(a){ if(a && editingIds[a.id]) a.editing = true; });
         renderAll();
-        // Reopen the tray that was open, if the agent still exists
         if (openTrayId) {
             for (var i=0; i<agents.length; i++) {
                 if (agents[i].id === openTrayId) { toggleTray(i); break; }
             }
         }
-    }, 300);
+        _reloadPending = false;
+    }, 400);
 }
 
 // ==================== ILLUSTRATED AVATAR SVGs ====================
@@ -796,12 +847,17 @@ var initialAgents = [
     {name:"Torez",level:"ZOOM",wfh:"F",gender:"male",avatarIndex:0,schedule:buildWeek("09:00","18:00","13:00")}
 ];
 
+// One default area per level so the Who-is-Where view matches the floor view ladder.
 var defaultAreas = [
-    {id:'area-main',name:'Main Floor',color:'#01CC74'},
-    {id:'area-phones',name:'Phone Bay',color:'#1665D8'},
-    {id:'area-zoom',name:'Zoom Room',color:'#FF4998'},
-    {id:'area-training',name:'Training Area',color:'#FFA500'}
+    {id:'area-t1',            name:'T1',           color:'#2e7d32'},
+    {id:'area-phone',         name:'Phone',        color:'#1565c0'},
+    {id:'area-ats',           name:'ATS',          color:'#0d47a1'},
+    {id:'area-bkaas-zoom',    name:'BKaaS / Zoom', color:'#00695c'},
+    {id:'area-zoom',          name:'ZOOM',         color:'#6a1b9a'},
+    {id:'area-lead',          name:'Lead',         color:'#f9a825'}
 ];
+// Legacy area IDs from older seed — used to auto-migrate old databases.
+var LEGACY_AREA_IDS = ['area-main','area-phones','area-zoom','area-training'];
 
 async function initData() {
     // Load agents from Supabase
@@ -832,6 +888,25 @@ async function initData() {
     var aRes = await sb.from('floor_areas').select('*').order('sort_order');
     if (aRes.data && aRes.data.length > 0) {
         floorAreas = aRes.data;
+        // Auto-migrate old seeded defaults (Main Floor / Phone Bay / Zoom Room / Training Area)
+        // to the new per-level defaults so the Who-is-Where view matches the level ladder.
+        var allLegacy = floorAreas.length > 0 && floorAreas.every(function(a){
+            return LEGACY_AREA_IDS.indexOf(a.id) !== -1;
+        });
+        if (allLegacy) {
+            // Delete the old rows, then insert the new ones.
+            for (var dli=0; dli<floorAreas.length; dli++) {
+                await sb.from('floor_areas').delete().eq('id', floorAreas[dli].id);
+            }
+            // Unlink any agents that still point at the legacy areas so they get re-assigned.
+            for (var uli=0; uli<agents.length; uli++) {
+                if (LEGACY_AREA_IDS.indexOf(agents[uli].area) !== -1) agents[uli].area = null;
+            }
+            floorAreas = JSON.parse(JSON.stringify(defaultAreas));
+            for (var nfi=0; nfi<floorAreas.length; nfi++) {
+                await sb.from('floor_areas').upsert({ id: floorAreas[nfi].id, name: floorAreas[nfi].name, color: floorAreas[nfi].color, sort_order: nfi });
+            }
+        }
     } else {
         floorAreas = JSON.parse(JSON.stringify(defaultAreas));
         for (var fi=0; fi<floorAreas.length; fi++) {
@@ -864,14 +939,23 @@ async function initData() {
 
 function autoAssignAgentsToAreas() {
     var validAreaIds=floorAreas.map(function(a){return a.id;});
-    // Find best area for each level by name matching
+    // Prefer an area whose name matches the agent's level exactly; otherwise fall back
+    // to a keyword match; otherwise the first area available.
     function findAreaForLevel(level) {
-        var nameMap={'Phone':'phone','ZOOM':'zoom','BKaaS / Zoom':'zoom','Lead':'main','T1':'main','ATS':'main'};
-        var keyword=(nameMap[level]||'main').toLowerCase();
+        var lvl=(level||'').toLowerCase().trim();
+        // 1. Exact match by name
         for(var i=0;i<floorAreas.length;i++){
-            if(floorAreas[i].name.toLowerCase().indexOf(keyword)!==-1)return floorAreas[i].id;
+            if((floorAreas[i].name||'').toLowerCase().trim()===lvl)return floorAreas[i].id;
         }
-        // Fallback: assign to first area if any exist
+        // 2. Keyword match (legacy)
+        var nameMap={'Phone':'phone','ZOOM':'zoom','BKaaS / Zoom':'zoom','Lead':'lead','T1':'t1','ATS':'ats'};
+        var keyword=(nameMap[level]||'').toLowerCase();
+        if(keyword){
+            for(var j=0;j<floorAreas.length;j++){
+                if((floorAreas[j].name||'').toLowerCase().indexOf(keyword)!==-1)return floorAreas[j].id;
+            }
+        }
+        // 3. Fallback: first area
         return floorAreas.length>0?floorAreas[0].id:null;
     }
     agents.forEach(function(a) {
@@ -907,7 +991,9 @@ function maintenanceCheck() {
 }
 
 async function save() {
-    agents.sort(function(a,b){return a.name.localeCompare(b.name);});
+    // NOTE: do NOT sort agents here — that would reorder indices while modals/trays
+    // may be open and cause SICK/PTO/MOVE/EDIT targets to point at wrong rows.
+    // Sorted order is restored by the next initData() call which uses .order('name').
     // Upsert agents to Supabase
     for (var i=0; i<agents.length; i++) {
         var a = agents[i];
@@ -1012,7 +1098,8 @@ function renderTable() {
                 });
                 ptoHtml+='</div>';
             }
-            html+='<tr onclick="toggleTray('+i+')">'+
+            var rowState = st.status === 'SICK' ? ' row-sick' : (st.status === 'PTO' ? ' row-pto' : '');
+            html+='<tr class="'+rowState.trim()+'" onclick="toggleTray('+i+')">'+
                 '<td style="width:40px;padding:5px;"><img src="'+avatarSrc+'" style="width:38px;height:42px;border-radius:8px;object-fit:cover;border:2px solid #3d4f99;cursor:pointer;background:#e8eef5;" onclick="event.stopPropagation();openAvatarPicker('+i+')"></td>'+
                 '<td><strong>'+a.name+'</strong></td>'+
                 '<td class="mobile-hide">'+a.level+'</td>'+
@@ -1146,10 +1233,13 @@ function renderFloorView() {
             else if(level==='Lead'){iconColor='#f9a825';iconSvg='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';}
             else{iconColor='#2e7d32';iconSvg='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8l8 5 8-5v10zm-8-7L4 6h16l-8 5z"/></svg>';}
 
-            var onFloorClass = st.status === 'ON FLOOR' ? ' on-floor' : '';
-            html+='<div class="org-card'+onFloorClass+'" draggable="true" data-agent-idx="'+idx+'" ondragstart="onDragStart(event,'+idx+')" ondragend="onDragEnd(event)" ondragover="onCardDragOver(event)" ondragleave="onCardDragLeave(event)" ondrop="onDropRoleOnAgent(event,'+idx+')">';
+            var stateClass = '';
+            if (st.status === 'SICK') stateClass = ' sick';
+            else if (st.status === 'PTO') stateClass = ' pto';
+            else if (st.status === 'ON FLOOR') stateClass = ' on-floor';
+            html+='<div class="org-card'+stateClass+'" draggable="true" data-agent-idx="'+idx+'" ondragstart="onDragStart(event,'+idx+')" ondragend="onDragEnd(event)" ondragover="onCardDragOver(event)" ondragleave="onCardDragLeave(event)" ondrop="onDropRoleOnAgent(event,'+idx+')">';
             html+='<div class="card-icon" style="background:'+iconColor+';">'+iconSvg+'</div>';
-            html+='<div style="position:relative;display:inline-block;"><img src="'+avatarSrc+'" class="card-avatar" onclick="openAvatarPicker('+idx+')">';
+            html+='<div style="position:relative;display:inline-block;"><img src="'+avatarSrc+'" class="card-avatar" draggable="false" ondragstart="return false;" onclick="event.stopPropagation();openAvatarPicker('+idx+')">';
             html+='<button class="btn-change-avatar" onclick="event.stopPropagation();openAvatarPicker('+idx+')" title="Change Avatar">A</button></div>';
             html+='<div class="card-name">'+a.name+'</div>';
             html+='<div class="card-role">'+a.level+'</div>';
@@ -1162,14 +1252,14 @@ function renderFloorView() {
             html+='</div></div>';
         });
 
-        // Open/Floating spots
+        // Open/Floating spots — accept drops of agents to fill the spot
         levelSpots.forEach(function(spot,si) {
             var globalIdx=openSpots.indexOf(spot);
-            html+='<div class="org-card open-spot">';
+            html+='<div class="org-card open-spot" ondragover="onCardDragOver(event)" ondragleave="onCardDragLeave(event)" ondrop="onDropOnSpot(event,'+globalIdx+',\''+level+'\')" title="Drag an agent here to fill this spot">';
             html+='<div class="open-silhouette"><img src="'+getSilhouetteSvg()+'" style="width:70px;height:70px;border-radius:50%;opacity:0.5;"></div>';
             html+='<div class="card-name">'+(spot.type==='floating'?'FLOATING':'OPEN')+'</div>';
             html+='<div class="card-role">'+(spot.label||('('+spot.type.charAt(0).toUpperCase()+spot.type.slice(1)+' Spot)'))+'</div>';
-            html+='<div class="card-actions"><button style="background:rgba(255,68,68,0.6);color:#fff;" onclick="removeSpot('+globalIdx+')">REMOVE</button></div>';
+            html+='<div class="card-actions"><button style="background:rgba(255,68,68,0.6);color:#fff;" onclick="event.stopPropagation();removeSpot('+globalIdx+')">REMOVE</button></div>';
             html+='</div>';
         });
 
@@ -1190,22 +1280,84 @@ function renderAreasView() {
         var chipsHtml='';
         areaAgents.forEach(function(a){
             var idx=agents.indexOf(a);var st=getStatus(a);
-            chipsHtml+='<div class="area-avatar-chip" draggable="true" data-agent-idx="'+idx+'" ondragstart="onDragStart(event,'+idx+')" ondragend="onDragEnd(event)"><img src="'+getAvatarSrc(a)+'"><span>'+a.name+'</span><span class="card-status '+st.badge+'" style="font-size:9px;padding:2px 5px;">'+st.status+'</span></div>';
+            var chipState = st.status === 'SICK' ? ' sick' : (st.status === 'PTO' ? ' pto' : '');
+            chipsHtml+='<div class="area-avatar-chip'+chipState+'" draggable="true" data-agent-idx="'+idx+'" ondragstart="onDragStart(event,'+idx+')" ondragend="onDragEnd(event)"><img src="'+getAvatarSrc(a)+'" draggable="false" ondragstart="return false;"><span>'+a.name+'</span><span class="card-status '+st.badge+'" style="font-size:9px;padding:2px 5px;">'+st.status+'</span></div>';
         });
-        html+='<div class="floor-area" style="border-color:'+area.color+'40;"><div class="floor-area-header"><h3 style="color:'+area.color+';">'+area.name+' <span style="color:#8090b8;font-size:12px;">('+areaAgents.length+')</span></h3><div style="display:flex;gap:5px;"><button onclick="renameArea('+ai+')" style="background:transparent;color:#8090b8;font-size:10px;">RENAME</button><button onclick="removeArea('+ai+')" style="background:transparent;color:var(--red);font-size:10px;">X</button></div></div><div class="floor-area-body" id="area-'+area.id+'" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDropArea(event,\''+area.id+'\')">'+(chipsHtml||'<div style="color:#8090b8;font-size:11px;padding:10px;">Drop agents here</div>')+'</div></div>';
+        html+='<div class="floor-area" style="border-color:'+area.color+'40;"><div class="floor-area-header"><h3 style="color:'+area.color+';">'+area.name+' <span style="color:#8090b8;font-size:12px;">('+areaAgents.length+')</span></h3><div style="display:flex;gap:5px;"><button onclick="renameArea('+ai+')" style="background:transparent;color:#8090b8;font-size:10px;">RENAME</button><button onclick="removeArea('+ai+')" style="background:transparent;color:var(--red);font-size:10px;">X</button></div></div><div class="floor-area-body" id="area-'+area.id+'" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDropArea(event,\''+area.id+'\')">'+(chipsHtml||'<div style="color:#8090b8;font-size:11px;padding:10px;pointer-events:none;">Drop agents here</div>')+'</div></div>';
     });
     container.innerHTML=html;
     var validAreaIds=floorAreas.map(function(a){return a.id;});
     var ua=agents.filter(function(a){return !a.area||validAreaIds.indexOf(a.area)===-1;});
     var uh='';
-    ua.forEach(function(a){var idx=agents.indexOf(a);var st=getStatus(a);uh+='<div class="area-avatar-chip" draggable="true" data-agent-idx="'+idx+'" ondragstart="onDragStart(event,'+idx+')" ondragend="onDragEnd(event)"><img src="'+getAvatarSrc(a)+'"><span>'+a.name+'</span><span class="card-status '+st.badge+'" style="font-size:9px;padding:2px 5px;">'+st.status+'</span></div>';});
-    unassigned.innerHTML=uh||'<div style="color:#8090b8;font-size:11px;">All agents assigned</div>';
+    ua.forEach(function(a){var idx=agents.indexOf(a);var st=getStatus(a);var chipState = st.status === 'SICK' ? ' sick' : (st.status === 'PTO' ? ' pto' : '');uh+='<div class="area-avatar-chip'+chipState+'" draggable="true" data-agent-idx="'+idx+'" ondragstart="onDragStart(event,'+idx+')" ondragend="onDragEnd(event)"><img src="'+getAvatarSrc(a)+'" draggable="false" ondragstart="return false;"><span>'+a.name+'</span><span class="card-status '+st.badge+'" style="font-size:9px;padding:2px 5px;">'+st.status+'</span></div>';});
+    unassigned.innerHTML=uh||'<div style="color:#8090b8;font-size:11px;pointer-events:none;">All agents assigned</div>';
     unassigned.ondragover=onDragOver;unassigned.ondragleave=onDragLeave;unassigned.ondrop=function(e){onDropArea(e,null);};
 }
 
-async function addNewArea(){var n=prompt('Enter area name:');if(!n)return;var c=['#01CC74','#FF4998','#1665D8','#FFA500','#4B9FFF','#FFD700','#01e680','#3d4f99'];floorAreas.push({id:'area-'+Date.now(),name:n,color:c[floorAreas.length%c.length]});await save();renderAreasView();}
-async function renameArea(ai){var n=prompt('New area name:',floorAreas[ai].name);if(n){floorAreas[ai].name=n;await save();renderAreasView();}}
-async function removeArea(ai){if(!confirm('Remove "'+floorAreas[ai].name+'"?'))return;var id=floorAreas[ai].id;agents.forEach(function(a){if(a.area===id)a.area=null;});await sb.from('floor_areas').delete().eq('id',id);floorAreas.splice(ai,1);await save();renderAreasView();}
+// ==================== AREA CRUD MODAL ====================
+var AREA_COLOR_PALETTE = ['#01CC74','#FF4998','#1665D8','#FFA500','#4B9FFF','#FFD700','#01e680','#3d4f99','#6a1b9a','#00695c','#f9a825','#1565c0','#2e7d32','#0d47a1'];
+var _editingAreaIndex = -1; // -1 means "new area"
+function openAreaModal(editIdx){
+    _editingAreaIndex = (typeof editIdx === 'number') ? editIdx : -1;
+    var isEdit = _editingAreaIndex >= 0;
+    document.getElementById('areaModalTitle').textContent = isEdit ? 'RENAME AREA' : 'ADD AREA';
+    document.getElementById('areaModalSaveBtn').textContent = isEdit ? 'SAVE CHANGES' : 'ADD AREA';
+    var nameInput = document.getElementById('areaNameInput');
+    var colorValue = document.getElementById('areaColorValue');
+    if (isEdit) {
+        nameInput.value = floorAreas[_editingAreaIndex].name || '';
+        colorValue.value = floorAreas[_editingAreaIndex].color || AREA_COLOR_PALETTE[0];
+    } else {
+        nameInput.value = '';
+        colorValue.value = AREA_COLOR_PALETTE[floorAreas.length % AREA_COLOR_PALETTE.length];
+    }
+    // Render the color swatches
+    var picker = document.getElementById('areaColorPicker');
+    var ph = '';
+    AREA_COLOR_PALETTE.forEach(function(c){
+        var sel = c === colorValue.value ? 'outline:3px solid #fff;' : '';
+        ph += '<div onclick="selectAreaColor(\''+c+'\')" style="cursor:pointer;width:28px;height:28px;border-radius:6px;background:'+c+';'+sel+'" data-color="'+c+'"></div>';
+    });
+    picker.innerHTML = ph;
+    document.getElementById('areaModal').classList.add('show');
+    setTimeout(function(){ nameInput.focus(); }, 50);
+}
+function selectAreaColor(c){
+    document.getElementById('areaColorValue').value = c;
+    document.querySelectorAll('#areaColorPicker > div').forEach(function(el){
+        el.style.outline = el.getAttribute('data-color') === c ? '3px solid #fff' : 'none';
+    });
+}
+async function saveAreaModal(){
+    var name = (document.getElementById('areaNameInput').value || '').trim();
+    var color = document.getElementById('areaColorValue').value || '#01CC74';
+    if (!name) { alert('Please enter an area name.'); return; }
+    if (_editingAreaIndex >= 0) {
+        floorAreas[_editingAreaIndex].name = name;
+        floorAreas[_editingAreaIndex].color = color;
+        await addAuditLog('area', 'Area renamed to "'+name+'"', '');
+    } else {
+        var newId = 'area-' + Date.now();
+        floorAreas.push({ id:newId, name:name, color:color });
+        await addAuditLog('area', 'New area "'+name+'" created', '');
+    }
+    await save();
+    closeModal('areaModal');
+    renderAreasView();
+}
+// Keep a backwards-compatible addNewArea() alias that the + ADD AREA button calls.
+function addNewArea(){ openAreaModal(-1); }
+function renameArea(ai){ openAreaModal(ai); }
+async function removeArea(ai){
+    if(!confirm('Remove "'+floorAreas[ai].name+'"? Agents in this area will become unassigned.'))return;
+    var id=floorAreas[ai].id;
+    agents.forEach(function(a){if(a.area===id)a.area=null;});
+    await sb.from('floor_areas').delete().eq('id',id);
+    floorAreas.splice(ai,1);
+    await addAuditLog('area','Area removed: "'+id+'"','');
+    await save();
+    renderAreasView();
+}
 
 // ==================== OPEN/FLOATING SPOTS ====================
 function openSpotModal(level) {
@@ -1234,14 +1386,15 @@ async function removeSpot(idx) {
 // ==================== DRAG & DROP ====================
 var dragAgentIdx=-1;
 var dragRoleLevel=null;
-function onDragStart(e,idx){dragAgentIdx=idx;dragRoleLevel=null;e.dataTransfer.setData('text/plain',idx.toString());e.dataTransfer.setData('dragType','agent');var c=e.target.closest('.org-card')||e.target.closest('.area-avatar-chip');if(c)c.classList.add('dragging');}
-function onDragEnd(e){dragRoleLevel=null;document.querySelectorAll('.dragging').forEach(function(el){el.classList.remove('dragging');});document.querySelectorAll('.drag-over').forEach(function(el){el.classList.remove('drag-over');});document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});}
-function onRoleDragStart(e,level){dragRoleLevel=level;dragAgentIdx=-1;e.dataTransfer.setData('text/plain',level);e.dataTransfer.setData('dragType','role');e.target.classList.add('dragging');}
-function onRoleDragEnd(e){dragRoleLevel=null;e.target.classList.remove('dragging');document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});}
-function onCardDragOver(e){e.preventDefault();if(dragRoleLevel){e.currentTarget.classList.add('role-drag-over');}else{e.currentTarget.classList.add('drag-over');}}
+function onDragStart(e,idx){dragAgentIdx=idx;dragRoleLevel=null;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',idx.toString());e.dataTransfer.setData('dragType','agent');var c=e.target.closest('.org-card')||e.target.closest('.area-avatar-chip');if(c)c.classList.add('dragging');}
+function onDragEnd(e){dragAgentIdx=-1;dragRoleLevel=null;document.querySelectorAll('.dragging').forEach(function(el){el.classList.remove('dragging');});document.querySelectorAll('.drag-over').forEach(function(el){el.classList.remove('drag-over');});document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});}
+function onRoleDragStart(e,level){dragRoleLevel=level;dragAgentIdx=-1;e.dataTransfer.effectAllowed='copy';e.dataTransfer.setData('text/plain',level);e.dataTransfer.setData('dragType','role');e.target.classList.add('dragging');}
+function onRoleDragEnd(e){dragRoleLevel=null;if(e&&e.target&&e.target.classList)e.target.classList.remove('dragging');document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});document.querySelectorAll('.dragging').forEach(function(el){el.classList.remove('dragging');});}
+function onCardDragOver(e){e.preventDefault();e.dataTransfer.dropEffect=dragRoleLevel?'copy':'move';if(dragRoleLevel){e.currentTarget.classList.add('role-drag-over');}else{e.currentTarget.classList.add('drag-over');}}
 function onCardDragLeave(e){e.currentTarget.classList.remove('role-drag-over');e.currentTarget.classList.remove('drag-over');}
-async function onDropRoleOnAgent(e,agentIdx){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('role-drag-over');if(!dragRoleLevel)return;var oldLevel=agents[agentIdx].level;if(oldLevel!==dragRoleLevel){agents[agentIdx].level=dragRoleLevel;agents[agentIdx].moveHistory.push({from:oldLevel,to:dragRoleLevel,type:'level_change',date:new Date().toISOString()});await addAuditLog('move',agents[agentIdx].name+' moved from '+oldLevel+' to '+dragRoleLevel,agents[agentIdx].name);await save();}dragRoleLevel=null;renderFloorView();renderLevelDropSidebar();}
-function onDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
+async function onDropRoleOnAgent(e,agentIdx){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('role-drag-over');e.currentTarget.classList.remove('drag-over');if(!dragRoleLevel){dragAgentIdx=-1;return;}var oldLevel=agents[agentIdx].level;if(oldLevel!==dragRoleLevel){agents[agentIdx].level=dragRoleLevel;agents[agentIdx].moveHistory=agents[agentIdx].moveHistory||[];agents[agentIdx].moveHistory.push({from:oldLevel,to:dragRoleLevel,type:'level_change',date:new Date().toISOString()});await addAuditLog('move',agents[agentIdx].name+' moved from '+oldLevel+' to '+dragRoleLevel,agents[agentIdx].name);await save();}dragRoleLevel=null;dragAgentIdx=-1;renderFloorView();renderLevelDropSidebar();}
+async function onDropOnSpot(e,spotIdx,level){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('role-drag-over');e.currentTarget.classList.remove('drag-over');if(dragRoleLevel){dragRoleLevel=null;return;}var idx=dragAgentIdx;if(idx<0){var txt=e.dataTransfer.getData('text/plain');idx=parseInt(txt);}if(isNaN(idx)||idx<0||!agents[idx])return;var oldLevel=agents[idx].level;if(oldLevel!==level){agents[idx].level=level;agents[idx].moveHistory=agents[idx].moveHistory||[];agents[idx].moveHistory.push({from:oldLevel,to:level,type:'level_change',date:new Date().toISOString()});await addAuditLog('move',agents[idx].name+' filled open spot in '+level+' (was '+oldLevel+')',agents[idx].name);}if(spotIdx>=0&&spotIdx<openSpots.length)openSpots.splice(spotIdx,1);await save();dragAgentIdx=-1;renderFloorView();renderLevelDropSidebar();}
+function onDragOver(e){e.preventDefault();e.dataTransfer.dropEffect=dragRoleLevel?'copy':'move';e.currentTarget.classList.add('drag-over');}
 function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
 
 async function onDropLevel(e,newLevel) {
@@ -1337,7 +1490,13 @@ function renderAuditLogs(){var search=document.getElementById('auditSearch').val
 // ==================== GLOBAL ====================
 function closeModal(id){document.getElementById(id).classList.remove('show');currentModalAgent=-1;pendingPhotoData=null;}
 document.querySelectorAll('.modal-overlay').forEach(function(o){o.addEventListener('click',function(e){if(e.target===this)closeModal(this.id);});});
-function renderAll(){renderTable();if(document.getElementById('view-floor').classList.contains('active')){renderFloorView();renderLevelDropSidebar();}if(document.getElementById('view-areas').classList.contains('active'))renderAreasView();}
+function renderAll(){
+    // Always render every view so floor <-> database <-> areas stay in perfect sync
+    // even when only one is visible. Cheap enough for our dataset.
+    try{renderTable();}catch(e){console.warn('renderTable failed',e);}
+    try{renderFloorView();renderLevelDropSidebar();}catch(e){console.warn('renderFloorView failed',e);}
+    try{renderAreasView();}catch(e){console.warn('renderAreasView failed',e);}
+}
 function exportData(){var d={agents:agents,floorAreas:floorAreas,auditLogs:auditLogs,openSpots:openSpots,version:3};navigator.clipboard.writeText(JSON.stringify(d)).then(function(){alert("Copied.");});}
 async function importData(){var d=prompt("Paste exported data:");if(!d)return;try{var p=JSON.parse(d);if(p.version>=2){agents=p.agents||[];floorAreas=p.floorAreas||[];auditLogs=p.auditLogs||[];openSpots=p.openSpots||[];}else{agents=p;}agents.forEach(function(a){if(!a.id)a.id=generateUUID();if(!a.scheduledPto)a.scheduledPto=[];if(!a.moveHistory)a.moveHistory=[];if(!a.area)a.area=null;if(!a.gender)a.gender='male';if(a.avatarIndex===undefined)a.avatarIndex=0;if(!a.avatarPhoto)a.avatarPhoto=null;});await save();renderAll();alert("Imported.");}catch(e){alert("Invalid data.");}}
 
