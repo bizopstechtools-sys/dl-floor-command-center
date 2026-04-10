@@ -880,8 +880,19 @@ var defaultAreas = [
 var LEGACY_AREA_IDS = ['area-main','area-phones','area-zoom','area-training'];
 
 async function initData() {
-    // Load agents from Supabase
+    // Load agents from Supabase.
+    // CRITICAL: this SELECT must succeed before we touch anything. A transient
+    // network error or auth flap used to make res.data come back empty, which
+    // then fell through to the seed branch and inserted 22 fresh rows with new
+    // UUIDs. Over repeated reloads that produced thousands of duplicates
+    // (see 2026-04-10 incident). The guard below refuses to seed unless we
+    // are CERTAIN the table is empty.
     var res = await sb.from('agents').select('*').order('name');
+    if (res.error) {
+        console.error('initData: agents fetch failed, aborting load to avoid reseed', res.error);
+        alert('Could not load agents from the database. Please refresh. (Details in console.)');
+        return;
+    }
     if (res.data && res.data.length > 0) {
         agents = res.data.map(function(r) {
             return {
@@ -898,7 +909,22 @@ async function initData() {
             };
         });
     } else {
-        // First run — seed from initialAgents
+        // DB truly empty — but before seeding, double-check audit_logs. If
+        // there is ANY audit history, this DB has been used before and an
+        // empty agents fetch is a bug, not a first run. Refuse to seed.
+        var auditGuard = await sb.from('audit_logs').select('id', { count: 'exact', head: true });
+        if (auditGuard.error) {
+            console.error('initData: audit_logs guard query failed, refusing to seed', auditGuard.error);
+            alert('Could not verify database state. Seed aborted. Please refresh.');
+            return;
+        }
+        if (typeof auditGuard.count === 'number' && auditGuard.count > 0) {
+            console.error('initData: agents table empty but audit_logs has '+auditGuard.count+' rows. Refusing to reseed — this DB has been used before.');
+            alert('Database appears corrupted (0 agents but '+auditGuard.count+' audit logs). Seed aborted. Contact support.');
+            return;
+        }
+        // Truly fresh DB — safe to seed once.
+        console.warn('initData: seeding '+initialAgents.length+' initial agents (first run)');
         agents = JSON.parse(JSON.stringify(initialAgents));
         agents.forEach(function(a) { a.id=generateUUID(); a.scheduledPto=[]; a.moveHistory=[]; a.area=null; a.avatarPhoto=null; });
         autoAssignAgentsToAreas();
