@@ -309,7 +309,11 @@
             <select id="floorStatusFilter" onchange="renderFloorView()" style="width:auto;">
                 <option value="all">All Statuses</option>
                 <option value="floor">On Floor Only</option>
-                <option value="out">Out Only</option>
+                <option value="lunch">Lunch Only</option>
+                <option value="pto">PTO Only</option>
+                <option value="sick">Sick Only</option>
+                <option value="off">Off / Not Scheduled</option>
+                <option value="out">All Out (PTO + Sick + Off)</option>
             </select>
         </div>
     </div>
@@ -1006,6 +1010,90 @@ function maintenanceCheck() {
     }
 }
 
+// Serialize one agent for the DB. Kept as a helper so saveAgent() and save() stay in sync.
+function agentToRow(a) {
+    if (!a.id) a.id = generateUUID();
+    return {
+        id: a.id, name: a.name, level: a.level, wfh: a.wfh || '-',
+        gender: a.gender || 'male', avatar_index: a.avatarIndex || 0,
+        avatar_photo: a.avatarPhoto || null,
+        sick_until: a.sickUntil || null, pto_until: a.ptoUntil || null,
+        sick_reason: a.sickReason || null, pto_reason: a.ptoReason || null,
+        area: a.area || null, full_week: a.fullWeek || false,
+        schedule: a.schedule, scheduled_pto: a.scheduledPto || [],
+        move_history: a.moveHistory || []
+    };
+}
+
+// Single-agent upsert — ~100ms round trip instead of 2-5 seconds for all 23.
+// Use this for targeted mutations (clear SICK, mark PTO, level change, etc.)
+// rather than calling the monolithic save() which re-upserts every agent.
+async function saveAgent(idx) {
+    if (idx < 0 || !agents[idx]) return;
+    _saving = true;
+    try {
+        await sb.from('agents').upsert(agentToRow(agents[idx]));
+    } finally {
+        _saving = false;
+    }
+}
+
+// Fire-and-forget version for optimistic UI: UI updates immediately and the
+// promise runs in the background. Errors are logged to console for debugging.
+function saveAgentAsync(idx) {
+    saveAgent(idx).catch(function(err) { console.error('saveAgent bg error:', err); });
+}
+
+// Single-agent delete — use this instead of save() when terminating an agent
+async function deleteAgent(agentId) {
+    if (!agentId) return;
+    _saving = true;
+    try {
+        await sb.from('agents').delete().eq('id', agentId);
+    } finally {
+        _saving = false;
+    }
+}
+function deleteAgentAsync(agentId) {
+    deleteAgent(agentId).catch(function(err) { console.error('deleteAgent bg error:', err); });
+}
+
+// Open spots async: delete-all + reinsert in background (cheap, table is small)
+async function saveOpenSpots() {
+    _saving = true;
+    try {
+        await sb.from('open_spots').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        for (var k = 0; k < openSpots.length; k++) {
+            await sb.from('open_spots').insert({
+                level: openSpots[k].level, type: openSpots[k].type, label: openSpots[k].label || ''
+            });
+        }
+    } finally {
+        _saving = false;
+    }
+}
+function saveOpenSpotsAsync() {
+    saveOpenSpots().catch(function(err) { console.error('saveOpenSpots bg error:', err); });
+}
+
+// Floor areas async upsert
+async function saveFloorAreas() {
+    _saving = true;
+    try {
+        for (var j = 0; j < floorAreas.length; j++) {
+            await sb.from('floor_areas').upsert({
+                id: floorAreas[j].id, name: floorAreas[j].name,
+                color: floorAreas[j].color, sort_order: j
+            });
+        }
+    } finally {
+        _saving = false;
+    }
+}
+function saveFloorAreasAsync() {
+    saveFloorAreas().catch(function(err) { console.error('saveFloorAreas bg error:', err); });
+}
+
 async function save() {
     // NOTE: do NOT sort agents here — that would reorder indices while modals/trays
     // may be open and cause SICK/PTO/MOVE/EDIT targets to point at wrong rows.
@@ -1017,16 +1105,7 @@ async function save() {
     for (var i=0; i<agents.length; i++) {
         var a = agents[i];
         if (!a.id) a.id = generateUUID();
-        await sb.from('agents').upsert({
-            id: a.id, name: a.name, level: a.level, wfh: a.wfh || '-',
-            gender: a.gender || 'male', avatar_index: a.avatarIndex || 0,
-            avatar_photo: a.avatarPhoto || null,
-            sick_until: a.sickUntil || null, pto_until: a.ptoUntil || null,
-            sick_reason: a.sickReason || null, pto_reason: a.ptoReason || null,
-            area: a.area || null, full_week: a.fullWeek || false,
-            schedule: a.schedule, scheduled_pto: a.scheduledPto || [],
-            move_history: a.moveHistory || []
-        });
+        await sb.from('agents').upsert(agentToRow(a));
     }
     // Sync floor areas
     for (var j=0; j<floorAreas.length; j++) {
@@ -1125,7 +1204,7 @@ function renderTable() {
                 ptoHtml='<div style="margin-top:10px;padding:10px;background:#1a2352;border-radius:6px;"><strong style="font-size:11px;color:#8090b8;">SCHEDULED TIME OFF:</strong>';
                 a.scheduledPto.forEach(function(p,pi){
                     var ts=p.type==='sick'?'background:rgba(255,68,68,0.2);color:var(--red)':'background:rgba(255,165,0,0.2);color:var(--orange)';
-                    ptoHtml+='<div class="pto-schedule-item"><div><span class="pto-type" style="'+ts+'">'+p.type.toUpperCase()+'</span> '+p.startDate+' to '+p.endDate+(p.reason?' - '+p.reason:'')+'</div><button onclick="event.stopPropagation();agents['+i+'].scheduledPto.splice('+pi+',1);save();renderTable();" style="background:transparent;color:var(--red);font-size:10px;">X</button></div>';
+                    ptoHtml+='<div class="pto-schedule-item"><div><span class="pto-type" style="'+ts+'">'+p.type.toUpperCase()+'</span> '+p.startDate+' to '+p.endDate+(p.reason?' - '+p.reason:'')+'</div><button onclick="event.stopPropagation();agents['+i+'].scheduledPto.splice('+pi+',1);saveAgentAsync('+i+');renderTable();" style="background:transparent;color:var(--red);font-size:10px;">X</button></div>';
                 });
                 ptoHtml+='</div>';
             }
@@ -1180,22 +1259,35 @@ function renderEditForm(i,curDay,a,s) {
     return '<div style="background:#1a2352;padding:15px;border-radius:8px;"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:15px;"><div><label>Level</label><select id="editLevel-'+i+'">'+ls+'</select></div><div><label>WFH Days</label><input type="text" id="editWFH-'+i+'" value="'+a.wfh+'"></div><div><label>Gender</label><select id="editGender-'+i+'">'+gs+'</select></div></div>'+sh+'<button class="btn-save" onclick="event.stopPropagation();saveEdit('+i+')">SAVE CHANGES</button></div>';
 }
 
-async function saveEdit(idx) {
+function saveEdit(idx) {
+    if(!agents[idx])return;
     var curDay=days[new Date().getDay()];
+    // 1) In-memory mutation
     agents[idx].wfh=document.getElementById('editWFH-'+idx).value;
     agents[idx].level=document.getElementById('editLevel-'+idx).value;
     agents[idx].gender=document.getElementById('editGender-'+idx).value;
     if(agents[idx].fullWeek){days.forEach(function(d){agents[idx].schedule[d].start=document.getElementById('s-'+idx+'-'+d).value;agents[idx].schedule[d].end=document.getElementById('e-'+idx+'-'+d).value;agents[idx].schedule[d].lunch=document.getElementById('l-'+idx+'-'+d).value;});}
     else{agents[idx].schedule[curDay].start=document.getElementById('editS-'+idx).value;agents[idx].schedule[curDay].end=document.getElementById('editE-'+idx).value;agents[idx].schedule[curDay].lunch=document.getElementById('editL-'+idx).value;}
-    agents[idx].editing=false;await save();renderTable();
+    agents[idx].editing=false;
+    // 2) Instant UI feedback
+    renderAll();
+    // 3) Background persistence — single-agent upsert
+    saveAgentAsync(idx);
 }
 
-async function addNewRep() {
+function addNewRep() {
     var name=document.getElementById('newName').value;if(!name)return;
     var level=document.getElementById('newLevel').value;
-    agents.push({id:generateUUID(),name:name,level:level,gender:document.getElementById('newGender').value,wfh:document.getElementById('newWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('newStart').value,document.getElementById('newEnd').value,document.getElementById('newLunch').value)});
-    await addAuditLog('add',name+' added to floor as '+level,name);
-    await save();document.getElementById('newName').value='';renderTable();
+    var newAgent={id:generateUUID(),name:name,level:level,gender:document.getElementById('newGender').value,wfh:document.getElementById('newWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('newStart').value,document.getElementById('newEnd').value,document.getElementById('newLunch').value)};
+    // 1) In-memory mutation
+    agents.push(newAgent);
+    var idx=agents.length-1;
+    document.getElementById('newName').value='';
+    // 2) Instant UI feedback
+    renderAll();
+    // 3) Background persistence
+    saveAgentAsync(idx);
+    addAuditLog('add',name+' added to floor as '+level,name).catch(function(err){console.error('audit bg error:',err);});
 }
 
 // ==================== FLOOR VIEW (ORG CHART) ====================
@@ -1243,7 +1335,11 @@ function renderFloorView() {
             if(searchFilter&&a.name.toLowerCase().indexOf(searchFilter)===-1)return false;
             if(statusFilter==='all')return true;
             var st=getStatus(a);
-            if(statusFilter==='floor')return st.status==='ON FLOOR'||st.status==='LUNCH';
+            if(statusFilter==='floor')return st.status==='ON FLOOR';
+            if(statusFilter==='lunch')return st.status==='LUNCH';
+            if(statusFilter==='pto')return st.status==='PTO';
+            if(statusFilter==='sick')return st.status==='SICK';
+            if(statusFilter==='off')return st.status==='OFF';
             if(statusFilter==='out')return st.status==='SICK'||st.status==='PTO'||st.status==='OFF';
             return true;
         });
@@ -1363,35 +1459,42 @@ function selectAreaColor(c){
         el.style.outline = el.getAttribute('data-color') === c ? '3px solid #fff' : 'none';
     });
 }
-async function saveAreaModal(){
+function saveAreaModal(){
     var name = (document.getElementById('areaNameInput').value || '').trim();
     var color = document.getElementById('areaColorValue').value || '#01CC74';
     if (!name) { alert('Please enter an area name.'); return; }
+    // 1) In-memory mutation
     if (_editingAreaIndex >= 0) {
         floorAreas[_editingAreaIndex].name = name;
         floorAreas[_editingAreaIndex].color = color;
-        await addAuditLog('area', 'Area renamed to "'+name+'"', '');
+        addAuditLog('area', 'Area renamed to "'+name+'"', '').catch(function(err){console.error('audit bg error:',err);});
     } else {
         var newId = 'area-' + Date.now();
         floorAreas.push({ id:newId, name:name, color:color });
-        await addAuditLog('area', 'New area "'+name+'" created', '');
+        addAuditLog('area', 'New area "'+name+'" created', '').catch(function(err){console.error('audit bg error:',err);});
     }
-    await save();
+    // 2) Instant UI feedback
     closeModal('areaModal');
     renderAreasView();
+    // 3) Background persistence
+    saveFloorAreasAsync();
 }
 // Keep a backwards-compatible addNewArea() alias that the + ADD AREA button calls.
 function addNewArea(){ openAreaModal(-1); }
 function renameArea(ai){ openAreaModal(ai); }
-async function removeArea(ai){
+function removeArea(ai){
     if(!confirm('Remove "'+floorAreas[ai].name+'"? Agents in this area will become unassigned.'))return;
     var id=floorAreas[ai].id;
-    agents.forEach(function(a){if(a.area===id)a.area=null;});
-    await sb.from('floor_areas').delete().eq('id',id);
+    var affectedIdxs=[];
+    // 1) In-memory mutation
+    agents.forEach(function(a,i){if(a.area===id){a.area=null;affectedIdxs.push(i);}});
     floorAreas.splice(ai,1);
-    await addAuditLog('area','Area removed: "'+id+'"','');
-    await save();
+    // 2) Instant UI feedback
     renderAreasView();
+    // 3) Background persistence
+    sb.from('floor_areas').delete().eq('id',id).then(function(){}).catch(function(err){console.error('floor_areas delete bg error:',err);});
+    affectedIdxs.forEach(function(i){saveAgentAsync(i);});
+    addAuditLog('area','Area removed: "'+id+'"','').catch(function(err){console.error('audit bg error:',err);});
 }
 
 // ==================== OPEN/FLOATING SPOTS ====================
@@ -1403,19 +1506,29 @@ function openSpotModal(level) {
     document.getElementById('spotModal').classList.add('show');
 }
 
-async function saveSpot() {
+function saveSpot() {
     var type=document.getElementById('spotType').value;
     var label=document.getElementById('spotLabel').value;
+    // 1) In-memory mutation
     openSpots.push({level:pendingSpotLevel,type:type,label:label||'',id:'spot-'+Date.now()});
-    await addAuditLog('add',type.toUpperCase()+' spot added to '+(levelLabels[pendingSpotLevel]||pendingSpotLevel)+(label?' ('+label+')':''),'');
-    await save();closeModal('spotModal');renderFloorView();
+    // 2) Instant UI feedback
+    closeModal('spotModal');
+    renderFloorView();
+    // 3) Background persistence
+    saveOpenSpotsAsync();
+    addAuditLog('add',type.toUpperCase()+' spot added to '+(levelLabels[pendingSpotLevel]||pendingSpotLevel)+(label?' ('+label+')':''),'').catch(function(err){console.error('audit bg error:',err);});
 }
 
-async function removeSpot(idx) {
+function removeSpot(idx) {
     if(!confirm('Remove this spot?'))return;
     var s=openSpots[idx];
-    await addAuditLog('terminate','Spot removed from '+(levelLabels[s.level]||s.level)+': '+s.type.toUpperCase()+(s.label?' ('+s.label+')':''),'');
-    openSpots.splice(idx,1);await save();renderFloorView();
+    // 1) In-memory mutation
+    openSpots.splice(idx,1);
+    // 2) Instant UI feedback
+    renderFloorView();
+    // 3) Background persistence
+    saveOpenSpotsAsync();
+    addAuditLog('terminate','Spot removed from '+(levelLabels[s.level]||s.level)+': '+s.type.toUpperCase()+(s.label?' ('+s.label+')':''),'').catch(function(err){console.error('audit bg error:',err);});
 }
 
 // ==================== DRAG & DROP ====================
@@ -1427,28 +1540,93 @@ function onRoleDragStart(e,level){dragRoleLevel=level;dragAgentIdx=-1;e.dataTran
 function onRoleDragEnd(e){dragRoleLevel=null;document.body.classList.remove('dragging-active');if(e&&e.target&&e.target.classList)e.target.classList.remove('dragging');document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});document.querySelectorAll('.dragging').forEach(function(el){el.classList.remove('dragging');});}
 function onCardDragOver(e){e.preventDefault();e.dataTransfer.dropEffect=dragRoleLevel?'copy':'move';if(dragRoleLevel){e.currentTarget.classList.add('role-drag-over');}else{e.currentTarget.classList.add('drag-over');}}
 function onCardDragLeave(e){e.currentTarget.classList.remove('role-drag-over');e.currentTarget.classList.remove('drag-over');}
-async function onDropRoleOnAgent(e,agentIdx){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('role-drag-over');e.currentTarget.classList.remove('drag-over');if(!dragRoleLevel){dragAgentIdx=-1;return;}var oldLevel=agents[agentIdx].level;if(oldLevel!==dragRoleLevel){agents[agentIdx].level=dragRoleLevel;agents[agentIdx].moveHistory=agents[agentIdx].moveHistory||[];agents[agentIdx].moveHistory.push({from:oldLevel,to:dragRoleLevel,type:'level_change',date:new Date().toISOString()});await addAuditLog('move',agents[agentIdx].name+' moved from '+oldLevel+' to '+dragRoleLevel,agents[agentIdx].name);await save();}dragRoleLevel=null;dragAgentIdx=-1;renderFloorView();renderLevelDropSidebar();}
-async function onDropOnSpot(e,spotIdx,level){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('role-drag-over');e.currentTarget.classList.remove('drag-over');if(dragRoleLevel){dragRoleLevel=null;return;}var idx=dragAgentIdx;if(idx<0){var txt=e.dataTransfer.getData('text/plain');idx=parseInt(txt);}if(isNaN(idx)||idx<0||!agents[idx])return;var oldLevel=agents[idx].level;if(oldLevel!==level){agents[idx].level=level;agents[idx].moveHistory=agents[idx].moveHistory||[];agents[idx].moveHistory.push({from:oldLevel,to:level,type:'level_change',date:new Date().toISOString()});await addAuditLog('move',agents[idx].name+' filled open spot in '+level+' (was '+oldLevel+')',agents[idx].name);}if(spotIdx>=0&&spotIdx<openSpots.length)openSpots.splice(spotIdx,1);await save();dragAgentIdx=-1;renderFloorView();renderLevelDropSidebar();}
+// Optimistic drop: mutate in memory, render instantly, persist in background
+function onDropRoleOnAgent(e,agentIdx){
+    e.preventDefault();e.stopPropagation();
+    e.currentTarget.classList.remove('role-drag-over');
+    e.currentTarget.classList.remove('drag-over');
+    if(!dragRoleLevel){dragAgentIdx=-1;return;}
+    var oldLevel=agents[agentIdx].level;
+    if(oldLevel!==dragRoleLevel){
+        // 1) In-memory mutation
+        agents[agentIdx].level=dragRoleLevel;
+        agents[agentIdx].moveHistory=agents[agentIdx].moveHistory||[];
+        agents[agentIdx].moveHistory.push({from:oldLevel,to:dragRoleLevel,type:'level_change',date:new Date().toISOString()});
+        var name=agents[agentIdx].name;
+        var newLvl=dragRoleLevel;
+        // 3) Background persistence
+        saveAgentAsync(agentIdx);
+        addAuditLog('move',name+' moved from '+oldLevel+' to '+newLvl,name).catch(function(err){console.error('audit bg error:',err);});
+    }
+    dragRoleLevel=null;dragAgentIdx=-1;
+    // 2) Instant UI feedback
+    renderFloorView();renderLevelDropSidebar();
+}
+function onDropOnSpot(e,spotIdx,level){
+    e.preventDefault();e.stopPropagation();
+    e.currentTarget.classList.remove('role-drag-over');
+    e.currentTarget.classList.remove('drag-over');
+    if(dragRoleLevel){dragRoleLevel=null;return;}
+    var idx=dragAgentIdx;
+    if(idx<0){var txt=e.dataTransfer.getData('text/plain');idx=parseInt(txt);}
+    if(isNaN(idx)||idx<0||!agents[idx])return;
+    var oldLevel=agents[idx].level;
+    var name=agents[idx].name;
+    if(oldLevel!==level){
+        // 1) In-memory mutation
+        agents[idx].level=level;
+        agents[idx].moveHistory=agents[idx].moveHistory||[];
+        agents[idx].moveHistory.push({from:oldLevel,to:level,type:'level_change',date:new Date().toISOString()});
+        addAuditLog('move',name+' filled open spot in '+level+' (was '+oldLevel+')',name).catch(function(err){console.error('audit bg error:',err);});
+    }
+    if(spotIdx>=0&&spotIdx<openSpots.length)openSpots.splice(spotIdx,1);
+    // 3) Background persistence — single agent + full save for openSpots in bg
+    saveAgentAsync(idx);
+    saveOpenSpotsAsync();
+    dragAgentIdx=-1;
+    // 2) Instant UI feedback
+    renderFloorView();renderLevelDropSidebar();
+}
 function onDragOver(e){e.preventDefault();e.dataTransfer.dropEffect=dragRoleLevel?'copy':'move';e.currentTarget.classList.add('drag-over');}
 function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
 
-async function onDropLevel(e,newLevel) {
+function onDropLevel(e,newLevel) {
     e.preventDefault();e.currentTarget.classList.remove('drag-over');
     if(dragRoleLevel){dragRoleLevel=null;return;}
-    var idx=parseInt(e.dataTransfer.getData('text/plain'));if(isNaN(idx)||idx<0)return;
+    var idx=parseInt(e.dataTransfer.getData('text/plain'));if(isNaN(idx)||idx<0||!agents[idx])return;
     var oldLevel=agents[idx].level;
-    if(oldLevel!==newLevel){agents[idx].level=newLevel;agents[idx].moveHistory.push({from:oldLevel,to:newLevel,type:'level_change',date:new Date().toISOString()});await addAuditLog('move',agents[idx].name+' moved from '+oldLevel+' to '+newLevel,agents[idx].name);await save();}
+    if(oldLevel!==newLevel){
+        // 1) In-memory mutation
+        agents[idx].level=newLevel;
+        agents[idx].moveHistory=agents[idx].moveHistory||[];
+        agents[idx].moveHistory.push({from:oldLevel,to:newLevel,type:'level_change',date:new Date().toISOString()});
+        var name=agents[idx].name;
+        // 3) Background persistence
+        saveAgentAsync(idx);
+        addAuditLog('move',name+' moved from '+oldLevel+' to '+newLevel,name).catch(function(err){console.error('audit bg error:',err);});
+    }
+    // 2) Instant UI feedback
     renderFloorView();renderLevelDropSidebar();
 }
 
-async function onDropArea(e,areaId) {
+function onDropArea(e,areaId) {
     e.preventDefault();e.currentTarget.classList.remove('drag-over');
-    var idx=parseInt(e.dataTransfer.getData('text/plain'));if(isNaN(idx)||idx<0)return;
+    var idx=parseInt(e.dataTransfer.getData('text/plain'));if(isNaN(idx)||idx<0||!agents[idx])return;
     var oldArea=agents[idx].area;
     var oldName='Unassigned';var newName='Unassigned';
     if(oldArea){var f=floorAreas.find(function(a){return a.id===oldArea;});if(f)oldName=f.name;}
-    if(areaId){var f=floorAreas.find(function(a){return a.id===areaId;});if(f)newName=f.name;}
-    if(oldArea!==areaId){agents[idx].area=areaId;agents[idx].moveHistory.push({from:oldName,to:newName,type:'area_change',date:new Date().toISOString()});await addAuditLog('area',agents[idx].name+' moved from "'+oldName+'" to "'+newName+'"',agents[idx].name);await save();}
+    if(areaId){var g=floorAreas.find(function(a){return a.id===areaId;});if(g)newName=g.name;}
+    if(oldArea!==areaId){
+        // 1) In-memory mutation
+        agents[idx].area=areaId;
+        agents[idx].moveHistory=agents[idx].moveHistory||[];
+        agents[idx].moveHistory.push({from:oldName,to:newName,type:'area_change',date:new Date().toISOString()});
+        var aname=agents[idx].name;
+        // 3) Background persistence
+        saveAgentAsync(idx);
+        addAuditLog('area',aname+' moved from "'+oldName+'" to "'+newName+'"',aname).catch(function(err){console.error('audit bg error:',err);});
+    }
+    // 2) Instant UI feedback
     renderAreasView();
 }
 
@@ -1496,29 +1674,149 @@ function handlePhotoUpload(event) {
     reader.readAsDataURL(file);
 }
 
-async function saveAvatar(){if(currentModalAgent<0)return;agents[currentModalAgent].gender=selectedAvatarGender;agents[currentModalAgent].avatarIndex=selectedAvatarIndex;agents[currentModalAgent].avatarPhoto=pendingPhotoData||null;await save();closeModal('avatarModal');renderAll();}
+function saveAvatar(){
+    if(currentModalAgent<0)return;
+    var idx=currentModalAgent;
+    // 1) In-memory mutation
+    agents[idx].gender=selectedAvatarGender;
+    agents[idx].avatarIndex=selectedAvatarIndex;
+    agents[idx].avatarPhoto=pendingPhotoData||null;
+    // 2) Instant UI feedback
+    closeModal('avatarModal');
+    renderAll();
+    // 3) Background persistence
+    saveAgentAsync(idx);
+}
 
 // ==================== OOO MODAL ====================
 function openOooModal(idx,type){currentModalAgent=idx;var a=agents[idx];document.getElementById('oooModalTitle').textContent=type==='sick'?'MARK SICK':'MARK PTO / OUT OF OFFICE';document.getElementById('oooModalName').textContent=a.name+' - '+a.level;document.getElementById('oooType').value=type;var today=new Date().toISOString().split('T')[0];document.getElementById('oooStart').value=today;document.getElementById('oooEnd').value=today;document.getElementById('oooReason').value='';renderScheduledPto(idx);var clearBtn=document.getElementById('oooClearBtn');var isOut=!!(a.sickUntil||a.ptoUntil);clearBtn.style.display=isOut?'inline-block':'none';clearBtn.textContent=a.sickUntil?'CLEAR SICK':(a.ptoUntil?'CLEAR PTO':'CLEAR');document.getElementById('oooModal').classList.add('show');}
-async function clearOooStatus(){if(currentModalAgent<0)return;var a=agents[currentModalAgent];var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':'OOO');a.sickUntil=null;a.sickReason=null;a.ptoUntil=null;a.ptoReason=null;await addAuditLog('clear',a.name+' cleared from '+was+' status',a.name);await save();closeModal('oooModal');renderAll();}
-async function quickClearStatus(idx){var a=agents[idx];if(!a)return;var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':'OOO');a.sickUntil=null;a.sickReason=null;a.ptoUntil=null;a.ptoReason=null;await addAuditLog('clear',a.name+' cleared from '+was+' status',a.name);await save();renderAll();}
+// Optimistic UI: mutate in memory, render immediately, then persist in the background.
+// The user sees the change in <16ms instead of waiting 2-5s for a full save() round trip.
+function clearOooStatus(){
+    if(currentModalAgent<0)return;
+    var idx=currentModalAgent;
+    var a=agents[idx];
+    var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':'OOO');
+    // 1) In-memory mutation
+    a.sickUntil=null;a.sickReason=null;a.ptoUntil=null;a.ptoReason=null;
+    // 2) Instant UI feedback
+    closeModal('oooModal');
+    renderAll();
+    // 3) Background persistence — fire-and-forget
+    saveAgentAsync(idx);
+    addAuditLog('clear',a.name+' cleared from '+was+' status',a.name).catch(function(e){console.error('audit bg error:',e);});
+}
+function quickClearStatus(idx){
+    var a=agents[idx];if(!a)return;
+    var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':'OOO');
+    // 1) In-memory mutation
+    a.sickUntil=null;a.sickReason=null;a.ptoUntil=null;a.ptoReason=null;
+    // 2) Instant UI feedback
+    renderAll();
+    // 3) Background persistence — fire-and-forget
+    saveAgentAsync(idx);
+    addAuditLog('clear',a.name+' cleared from '+was+' status',a.name).catch(function(e){console.error('audit bg error:',e);});
+}
 
-function renderScheduledPto(idx){var list=document.getElementById('scheduledPtoList');var a=agents[idx];if(!a.scheduledPto||a.scheduledPto.length===0){list.innerHTML='<div style="color:#8090b8;font-size:11px;padding:5px;">No scheduled time off</div>';return;}var h='';a.scheduledPto.forEach(function(p,pi){var ts=p.type==='sick'?'background:rgba(255,68,68,0.2);color:var(--red)':'background:rgba(255,165,0,0.2);color:var(--orange)';h+='<div class="pto-schedule-item"><div><span class="pto-type" style="'+ts+'">'+p.type.toUpperCase()+'</span> <span style="margin-left:8px;">'+p.startDate+' to '+p.endDate+'</span>'+(p.reason?'<br><span style="color:#8090b8;font-size:11px;">'+p.reason+'</span>':'')+'</div><button onclick="event.stopPropagation();agents['+idx+'].scheduledPto.splice('+pi+',1);save();renderScheduledPto('+idx+');" style="background:transparent;color:var(--red);font-size:14px;padding:2px 6px;">X</button></div>';});list.innerHTML=h;}
+function renderScheduledPto(idx){var list=document.getElementById('scheduledPtoList');var a=agents[idx];if(!a.scheduledPto||a.scheduledPto.length===0){list.innerHTML='<div style="color:#8090b8;font-size:11px;padding:5px;">No scheduled time off</div>';return;}var h='';a.scheduledPto.forEach(function(p,pi){var ts=p.type==='sick'?'background:rgba(255,68,68,0.2);color:var(--red)':'background:rgba(255,165,0,0.2);color:var(--orange)';h+='<div class="pto-schedule-item"><div><span class="pto-type" style="'+ts+'">'+p.type.toUpperCase()+'</span> <span style="margin-left:8px;">'+p.startDate+' to '+p.endDate+'</span>'+(p.reason?'<br><span style="color:#8090b8;font-size:11px;">'+p.reason+'</span>':'')+'</div><button onclick="event.stopPropagation();agents['+idx+'].scheduledPto.splice('+pi+',1);saveAgentAsync('+idx+');renderScheduledPto('+idx+');" style="background:transparent;color:var(--red);font-size:14px;padding:2px 6px;">X</button></div>';});list.innerHTML=h;}
 
-async function saveOoo(){if(currentModalAgent<0)return;var type=document.getElementById('oooType').value;var startDate=document.getElementById('oooStart').value;var endDate=document.getElementById('oooEnd').value;var reason=document.getElementById('oooReason').value;if(!startDate||!endDate){alert('Please select dates.');return;}var now=new Date();var endD=new Date(endDate+'T23:59:59');var todayStr=now.toISOString().split('T')[0];if(startDate<=todayStr){if(type==='sick'){agents[currentModalAgent].sickUntil=endD.getTime();agents[currentModalAgent].sickReason=reason||null;agents[currentModalAgent].ptoUntil=null;}else{agents[currentModalAgent].ptoUntil=endD.getTime();agents[currentModalAgent].ptoReason=reason||null;agents[currentModalAgent].sickUntil=null;}await addAuditLog(type,agents[currentModalAgent].name+' marked '+type.toUpperCase()+' from '+startDate+' to '+endDate+(reason?' - Reason: '+reason:''),agents[currentModalAgent].name);}agents[currentModalAgent].scheduledPto.push({type:type,startDate:startDate,endDate:endDate,reason:reason,createdAt:new Date().toISOString()});await save();closeModal('oooModal');renderAll();}
+function saveOoo(){
+    if(currentModalAgent<0)return;
+    var idx=currentModalAgent;
+    var type=document.getElementById('oooType').value;
+    var startDate=document.getElementById('oooStart').value;
+    var endDate=document.getElementById('oooEnd').value;
+    var reason=document.getElementById('oooReason').value;
+    if(!startDate||!endDate){alert('Please select dates.');return;}
+    var now=new Date();
+    var endD=new Date(endDate+'T23:59:59');
+    var todayStr=now.toISOString().split('T')[0];
+    var a=agents[idx];
+    // 1) In-memory mutation
+    if(startDate<=todayStr){
+        if(type==='sick'){a.sickUntil=endD.getTime();a.sickReason=reason||null;a.ptoUntil=null;}
+        else{a.ptoUntil=endD.getTime();a.ptoReason=reason||null;a.sickUntil=null;}
+        addAuditLog(type,a.name+' marked '+type.toUpperCase()+' from '+startDate+' to '+endDate+(reason?' - Reason: '+reason:''),a.name).catch(function(e){console.error('audit bg error:',e);});
+    }
+    a.scheduledPto.push({type:type,startDate:startDate,endDate:endDate,reason:reason,createdAt:new Date().toISOString()});
+    // 2) Instant UI feedback
+    closeModal('oooModal');
+    renderAll();
+    // 3) Background persistence
+    saveAgentAsync(idx);
+}
 
 // ==================== MOVE / PROMOTE / TERMINATE ====================
 function openMoveModal(idx){currentModalAgent=idx;var a=agents[idx];document.getElementById('moveModalName').textContent=a.name;document.getElementById('moveModalCurrent').textContent='Currently: '+a.level;document.getElementById('moveModal').classList.add('show');}
 function openPromotionLogModal(idx){currentModalAgent=idx;var a=agents[idx];document.getElementById('promoteModalName').textContent=a.name;document.getElementById('promoteCurrentLevel').value=a.level;var ci=levelOrder.indexOf(a.level);var nl=ci>0?levelOrder[ci-1]:a.level;document.getElementById('promoteNewLevel').value=nl;document.getElementById('promoteModal').classList.add('show');}
 function openPromoteModal(idx){currentModalAgent=idx;var a=agents[idx];document.getElementById('promoteModalName').textContent=a.name;document.getElementById('promoteCurrentLevel').value=a.level;document.getElementById('promoteNewLevel').value=a.level;document.getElementById('promoteModal').classList.add('show');}
 
-async function confirmPromotion(){if(currentModalAgent<0)return;var oldLevel=agents[currentModalAgent].level;var newLevel=document.getElementById('promoteNewLevel').value;if(oldLevel===newLevel){alert('Please select a different level.');return;}var name=agents[currentModalAgent].name;agents[currentModalAgent].level=newLevel;agents[currentModalAgent].moveHistory.push({from:oldLevel,to:newLevel,type:'promotion',date:new Date().toISOString()});await addAuditLog('promote',name+' promoted from '+oldLevel+' to '+newLevel,name);await save();closeModal('promoteModal');if(confirm(name+' has been promoted to '+newLevel+'.\n\nWould you like to add someone to fill the '+oldLevel+' position?')){document.getElementById('replacementInfo').textContent='Filling '+oldLevel+' position (previously held by '+name+')';document.getElementById('repLevel').value=oldLevel;document.getElementById('replacementModal').classList.add('show');}renderAll();}
+function confirmPromotion(){
+    if(currentModalAgent<0)return;
+    var idx=currentModalAgent;
+    var oldLevel=agents[idx].level;
+    var newLevel=document.getElementById('promoteNewLevel').value;
+    if(oldLevel===newLevel){alert('Please select a different level.');return;}
+    var name=agents[idx].name;
+    // 1) In-memory mutation
+    agents[idx].level=newLevel;
+    agents[idx].moveHistory.push({from:oldLevel,to:newLevel,type:'promotion',date:new Date().toISOString()});
+    // 2) Instant UI feedback
+    closeModal('promoteModal');
+    renderAll();
+    // 3) Background persistence
+    saveAgentAsync(idx);
+    addAuditLog('promote',name+' promoted from '+oldLevel+' to '+newLevel,name).catch(function(e){console.error('audit bg error:',e);});
+    if(confirm(name+' has been promoted to '+newLevel+'.\n\nWould you like to add someone to fill the '+oldLevel+' position?')){
+        document.getElementById('replacementInfo').textContent='Filling '+oldLevel+' position (previously held by '+name+')';
+        document.getElementById('repLevel').value=oldLevel;
+        document.getElementById('replacementModal').classList.add('show');
+    }
+}
 
 function openTerminateModal(idx){currentModalAgent=idx;var a=agents[idx];document.getElementById('terminateModalName').textContent=a.name+' - '+a.level;document.getElementById('terminateReason').value='terminated';document.getElementById('terminateNotes').value='';document.getElementById('terminateReplacement').value='later';document.getElementById('terminateModal').classList.add('show');}
 
-async function confirmTermination(){if(currentModalAgent<0)return;var a=agents[currentModalAgent];var reason=document.getElementById('terminateReason').value;var notes=document.getElementById('terminateNotes').value;var wantsRep=document.getElementById('terminateReplacement').value==='now';var oldLevel=a.level;var oldName=a.name;var agentId=a.id;await addAuditLog('terminate',oldName+' removed ('+oldLevel+'). Reason: '+reason+(notes?'. Notes: '+notes:''),oldName);agents.splice(currentModalAgent,1);if(agentId){await sb.from('agents').delete().eq('id',agentId);}await save();closeModal('terminateModal');if(wantsRep){document.getElementById('replacementInfo').textContent='Filling '+oldLevel+' position (previously held by '+oldName+')';document.getElementById('repLevel').value=oldLevel;document.getElementById('replacementModal').classList.add('show');}renderAll();}
+function confirmTermination(){
+    if(currentModalAgent<0)return;
+    var a=agents[currentModalAgent];
+    var reason=document.getElementById('terminateReason').value;
+    var notes=document.getElementById('terminateNotes').value;
+    var wantsRep=document.getElementById('terminateReplacement').value==='now';
+    var oldLevel=a.level;
+    var oldName=a.name;
+    var agentId=a.id;
+    // 1) In-memory mutation
+    agents.splice(currentModalAgent,1);
+    // 2) Instant UI feedback
+    closeModal('terminateModal');
+    renderAll();
+    // 3) Background persistence
+    if(agentId){deleteAgentAsync(agentId);}
+    addAuditLog('terminate',oldName+' removed ('+oldLevel+'). Reason: '+reason+(notes?'. Notes: '+notes:''),oldName).catch(function(err){console.error('audit bg error:',err);});
+    if(wantsRep){
+        document.getElementById('replacementInfo').textContent='Filling '+oldLevel+' position (previously held by '+oldName+')';
+        document.getElementById('repLevel').value=oldLevel;
+        document.getElementById('replacementModal').classList.add('show');
+    }
+}
 
-async function addReplacement(){var name=document.getElementById('repName').value;if(!name){alert('Please enter a name.');return;}var level=document.getElementById('repLevel').value;agents.push({id:generateUUID(),name:name,level:level,gender:document.getElementById('repGender').value,wfh:document.getElementById('repWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('repStart').value,document.getElementById('repEnd').value,document.getElementById('repLunch').value)});await addAuditLog('add',name+' added as replacement ('+level+')',name);await save();document.getElementById('repName').value='';document.getElementById('repWFH').value='';closeModal('replacementModal');renderAll();}
+function addReplacement(){
+    var name=document.getElementById('repName').value;
+    if(!name){alert('Please enter a name.');return;}
+    var level=document.getElementById('repLevel').value;
+    var newAgent={id:generateUUID(),name:name,level:level,gender:document.getElementById('repGender').value,wfh:document.getElementById('repWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('repStart').value,document.getElementById('repEnd').value,document.getElementById('repLunch').value)};
+    // 1) In-memory mutation
+    agents.push(newAgent);
+    var idx=agents.length-1;
+    document.getElementById('repName').value='';
+    document.getElementById('repWFH').value='';
+    // 2) Instant UI feedback
+    closeModal('replacementModal');
+    renderAll();
+    // 3) Background persistence
+    saveAgentAsync(idx);
+    addAuditLog('add',name+' added as replacement ('+level+')',name).catch(function(err){console.error('audit bg error:',err);});
+}
 
 // ==================== AUDIT ====================
 function showAuditModal(){document.getElementById('auditSearch').value='';document.getElementById('auditFilter').value='all';renderAuditLogs();document.getElementById('auditModal').classList.add('show');}
