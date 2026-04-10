@@ -880,13 +880,23 @@ var defaultAreas = [
 var LEGACY_AREA_IDS = ['area-main','area-phones','area-zoom','area-training'];
 
 async function initData() {
+    // HARD GATE: never run any queries until we have a confirmed authenticated
+    // Supabase session. Without this, a race between handleSignIn() resolving
+    // and the JWT being attached to the PostgREST client caused initData to
+    // query as anon. RLS then returned 0 rows with no error, and the old
+    // seed-on-empty branch inserted 22 fresh agents. Over many reloads this
+    // produced thousands of duplicates (see 2026-04-10 incident).
+    var sessRes = await sb.auth.getSession();
+    if (!sessRes || !sessRes.data || !sessRes.data.session) {
+        console.error('initData: no auth session, refusing to query or seed');
+        alert('Your session has expired. Please sign in again.');
+        return;
+    }
     // Load agents from Supabase.
-    // CRITICAL: this SELECT must succeed before we touch anything. A transient
-    // network error or auth flap used to make res.data come back empty, which
-    // then fell through to the seed branch and inserted 22 fresh rows with new
-    // UUIDs. Over repeated reloads that produced thousands of duplicates
-    // (see 2026-04-10 incident). The guard below refuses to seed unless we
-    // are CERTAIN the table is empty.
+    // CRITICAL: this SELECT must succeed and return data. The seed-on-empty
+    // branch was REMOVED — this DB is past first-run and must never reseed.
+    // If we get 0 rows, the correct action is to loudly fail so a human can
+    // investigate, not to silently repopulate with fresh UUIDs.
     var res = await sb.from('agents').select('*').order('name');
     if (res.error) {
         console.error('initData: agents fetch failed, aborting load to avoid reseed', res.error);
@@ -909,26 +919,13 @@ async function initData() {
             };
         });
     } else {
-        // DB truly empty — but before seeding, double-check audit_logs. If
-        // there is ANY audit history, this DB has been used before and an
-        // empty agents fetch is a bug, not a first run. Refuse to seed.
-        var auditGuard = await sb.from('audit_logs').select('id', { count: 'exact', head: true });
-        if (auditGuard.error) {
-            console.error('initData: audit_logs guard query failed, refusing to seed', auditGuard.error);
-            alert('Could not verify database state. Seed aborted. Please refresh.');
-            return;
-        }
-        if (typeof auditGuard.count === 'number' && auditGuard.count > 0) {
-            console.error('initData: agents table empty but audit_logs has '+auditGuard.count+' rows. Refusing to reseed — this DB has been used before.');
-            alert('Database appears corrupted (0 agents but '+auditGuard.count+' audit logs). Seed aborted. Contact support.');
-            return;
-        }
-        // Truly fresh DB — safe to seed once.
-        console.warn('initData: seeding '+initialAgents.length+' initial agents (first run)');
-        agents = JSON.parse(JSON.stringify(initialAgents));
-        agents.forEach(function(a) { a.id=generateUUID(); a.scheduledPto=[]; a.moveHistory=[]; a.area=null; a.avatarPhoto=null; });
-        autoAssignAgentsToAreas();
-        await save();
+        // Zero rows returned. We are authenticated (checked above), so this
+        // is NOT an auth/RLS issue. The DB is either genuinely empty (which
+        // must never happen in production) or there is a permissions bug.
+        // Either way, refuse to seed. Alert loudly and bail.
+        console.error('initData: agents query returned 0 rows while authenticated. Refusing to seed. Contact support.');
+        alert('Database is empty or unreachable. Seed path is disabled. Please contact support.');
+        return;
     }
     // Load floor areas
     var aRes = await sb.from('floor_areas').select('*').order('sort_order');
