@@ -928,7 +928,16 @@ function loadLocalCache() {
 }
 function saveLocalCache() {
     try {
-        localStorage.setItem(CACHE_KEY_AGENTS, JSON.stringify(agents));
+        // Strip avatar_photo (base64 blobs can be hundreds of KB each and
+        // blow the ~5 MB localStorage quota). Photos re-hydrate from the DB
+        // via hydrateAvatarPhotos() after every load anyway.
+        var slim = agents.map(function(a) {
+            var c = {};
+            for (var k in a) { if (k !== 'avatarPhoto') c[k] = a[k]; }
+            c.avatarPhoto = null;
+            return c;
+        });
+        localStorage.setItem(CACHE_KEY_AGENTS, JSON.stringify(slim));
         localStorage.setItem(CACHE_KEY_AREAS,  JSON.stringify(floorAreas));
     } catch(e) { console.warn('saveLocalCache failed:', e); }
 }
