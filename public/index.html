@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DoorLoop Floor Command Center v3</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        /* LOGIN SCREEN */
+        #loginScreen { display:flex; justify-content:center; align-items:center; min-height:100vh; padding:20px; }
+        .login-card { background:#2F3E83; border:2px solid #01CC74; border-radius:16px; padding:40px; width:100%; max-width:400px; box-shadow:0 10px 40px rgba(0,0,0,0.5); }
+        .login-card h1 { color:#01CC74; font-size:28px; margin-bottom:10px; text-align:center; }
+        .login-card .subtitle { color:#8090b8; text-align:center; font-size:13px; margin-bottom:30px; }
+        .login-card .form-group { margin-bottom:20px; }
+        .login-card input { width:100%; background:#1a2352; border:1px solid #3d4f99; color:#fff; padding:12px; border-radius:8px; font-size:14px; font-family:inherit; }
+        .login-card input:focus { outline:none; border-color:#01CC74; box-shadow:0 0 10px rgba(1,204,116,0.2); }
+        .login-actions { display:flex; gap:10px; margin-top:30px; }
+        .login-actions button { flex:1; padding:14px; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px; transition:0.3s; font-family:inherit; }
+        .btn-signin { background:linear-gradient(135deg,#01CC74,#01e680); color:#000; }
+        .btn-signin:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(1,204,116,0.3); }
+        .btn-signup { background:transparent; border:2px solid #01CC74 !important; color:#01CC74; }
+        .btn-signup:hover { background:rgba(1,204,116,0.1); }
+        .login-message { margin-top:15px; padding:10px; border-radius:6px; font-size:12px; text-align:center; display:none; }
+        .login-message.error { display:block; background:rgba(255,68,68,0.2); color:#ff4444; border:1px solid #ff4444; }
+        .login-message.success { display:block; background:rgba(1,204,116,0.2); color:#01CC74; border:1px solid #01CC74; }
+        #appContainer { display:none; }
+        .user-bar { display:flex; align-items:center; gap:10px; padding:5px 10px; font-size:11px; color:#8090b8; }
+        .btn-logout { background:transparent; color:#ff4444; border:1px solid #ff4444; font-size:10px; padding:4px 10px; cursor:pointer; border-radius:4px; }
+        :root { --green: #01CC74; --orange: #FFA500; --red: #FF4444; --blue: #4B9FFF; --purple: #FF4998; --bg: #1a2352; --panel: #2F3E83; --panel2: #232f66; --accent: #1665D8; --accent2: #0d47a1; --dl-navy: #2F3E83; --dl-green: #01CC74; --dl-pink: #FF4998; --dl-navy-dark: #1a2352; --dl-navy-light: #3d4f99; --dl-navy-border: #3d4f99; }
+        html { scroll-behavior: smooth; }
+        * { box-sizing: border-box; }
+        body { background: linear-gradient(135deg, #141c45 0%, #1a2352 50%, #141c45 100%); color: #fff; font-family: 'Segoe UI', sans-serif; padding: 0; margin: 0; -webkit-overflow-scrolling: touch; overflow-x: hidden; min-height: 100vh; }
+
+        .nav-bar { display: flex; background: rgba(26,35,82,0.97); border-bottom: 2px solid var(--dl-navy-light); position: sticky; top: 0; z-index: 200; backdrop-filter: blur(10px); }
+        .nav-tab { padding: 15px 25px; cursor: pointer; font-weight: bold; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #8090b8; border-bottom: 3px solid transparent; transition: 0.3s; }
+        .nav-tab:hover { color: var(--dl-green); }
+        .nav-tab.active { color: var(--dl-green); border-bottom-color: var(--dl-green); }
+        .view-panel { display: none; padding: 20px; }
+        .view-panel.active { display: block; }
+
+        .card { background: rgba(47,62,131,0.5); border: 1px solid var(--dl-navy-light); border-radius: 10px; padding: 20px; margin-bottom: 15px; backdrop-filter: blur(5px); }
+        input, select, textarea { background: var(--dl-navy-dark); border: 1px solid var(--dl-navy-light); color: #fff; padding: 8px; border-radius: 6px; width: 100%; box-sizing: border-box; font-family: inherit; }
+        textarea { resize: vertical; min-height: 60px; }
+        button { cursor: pointer; border-radius: 6px; border: none; font-weight: bold; padding: 8px 12px; font-size: 11px; transition: 0.3s; font-family: inherit; }
+        label { font-size: 10px; color: #8090b8; text-transform: uppercase; margin-bottom: 5px; display: block; letter-spacing: 0.5px; }
+
+        .btn-expand { background: transparent; color: var(--dl-green); border: 1px solid var(--dl-green); }
+        .btn-sick { background: rgba(255,68,68,0.1); color: var(--red); border: 1px solid var(--red); }
+        .btn-pto { background: rgba(255,165,0,0.1); color: var(--orange); border: 1px solid var(--orange); }
+        .btn-save { background: linear-gradient(135deg, #01CC74, #01e680); color: #000; padding: 12px; width: 100%; margin-top: 15px; font-size: 13px; border-radius: 8px; }
+        .btn-promote { background: rgba(255,73,152,0.1); color: var(--dl-pink); border: 1px solid var(--dl-pink); }
+        .btn-term { background: rgba(255,68,68,0.1); color: var(--red); border: 1px solid var(--red); }
+
+        .status-floor { color: var(--green) !important; font-weight: bold; }
+        .status-lunch { color: var(--orange) !important; font-weight: bold; }
+        .status-sick { color: var(--red) !important; text-decoration: line-through; }
+        .status-pto { color: var(--orange) !important; text-decoration: line-through; font-style: italic; }
+        .status-off { color: #ff5252 !important; font-weight: bold; }
+
+        .entry-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; align-items: end; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; color: #8090b8; font-size: 11px; text-transform: uppercase; padding: 10px; border-bottom: 2px solid var(--dl-navy-light); }
+        td { padding: 12px 10px; border-bottom: 1px solid rgba(61,79,153,0.2); font-size: 14px; cursor: pointer; }
+        tr:hover td { background: rgba(47,62,131,0.3); }
+        .action-tray { display: none; background: rgba(26,35,82,0.95); padding: 20px; border-left: 3px solid var(--dl-green); border-bottom: 2px solid var(--dl-navy-light); }
+        .weekly-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 15px; }
+        .day-box { font-size: 11px; border: 1px solid var(--dl-navy-light); padding: 10px; border-radius: 6px; background: var(--dl-navy-dark); text-align: center; }
+
+        /* ORG CHART FLOOR VIEW */
+        .org-chart { display: flex; flex-direction: column; align-items: center; padding: 30px 20px; }
+        .org-level { display: flex; flex-direction: column; align-items: center; width: 100%; margin-bottom: 0; position: relative; }
+        .org-level-header { background: linear-gradient(135deg, #2F3E83, #3d4f99); color: #fff; font-weight: bold; font-size: 15px; text-transform: uppercase; letter-spacing: 2px; padding: 12px 40px; border-radius: 30px; margin-bottom: 15px; box-shadow: 0 4px 20px rgba(47,62,131,0.5); z-index: 2; position: relative; }
+        .org-level-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; padding: 20px; background: rgba(255,255,255,0.03); border: 1px solid rgba(61,79,153,0.5); border-radius: 15px; min-width: 300px; max-width: 90vw; position: relative; }
+        .org-connector { width: 3px; height: 40px; background: linear-gradient(to bottom, var(--dl-navy), var(--dl-green)); margin: 0 auto; position: relative; }
+        .org-connector::before, .org-connector::after { content: ''; position: absolute; left: 50%; transform: translateX(-50%); }
+        .org-connector::after { bottom: -4px; width: 10px; height: 10px; border-left: 3px solid var(--dl-green); border-bottom: 3px solid var(--dl-green); transform: translateX(-50%) rotate(-45deg); }
+        .org-h-line { height: 3px; background: var(--dl-navy); position: absolute; top: -20px; }
+
+        /* AVATAR CARDS - ORG CHART STYLE */
+        .org-card { background: linear-gradient(145deg, #ffffff, #e8eef5); border: 2px solid #b0c0e8; border-radius: 14px; padding: 15px; width: 160px; text-align: center; cursor: grab; transition: 0.3s; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .org-card:hover { transform: translateY(-4px); box-shadow: 0 8px 25px rgba(1,204,116,0.25); border-color: var(--dl-green); }
+        .org-card.dragging { opacity: 0.4; }
+        .org-card .card-avatar { width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 8px; display: block; object-fit: cover; border: 3px solid var(--dl-green); background: #e0e0e0; box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
+        .org-card .card-name { font-weight: bold; font-size: 14px; color: #2F3E83; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .org-card .card-role { font-size: 10px; color: #8090b8; margin-bottom: 6px; }
+        .org-card .card-status { font-size: 10px; padding: 3px 10px; border-radius: 12px; display: inline-block; font-weight: bold; }
+        .org-card .card-icon { position: absolute; top: 8px; left: 8px; width: 28px; height: 28px; background: #26a69a; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+        .org-card .card-actions { display: flex; gap: 4px; margin-top: 8px; justify-content: center; }
+        .org-card .card-actions button { font-size: 9px; padding: 3px 6px; border-radius: 4px; color: #fff; }
+
+        .badge-floor { background: #c8e6c9; color: #2e7d32; }
+        .badge-lunch { background: #fff3e0; color: #ef6c00; }
+        .badge-sick { background: #ffcdd2; color: #c62828; }
+        .badge-pto { background: #fff3e0; color: #ef6c00; }
+        .badge-off { background: #eceff1; color: #78909c; }
+
+        /* OPEN / FLOATING SPOT */
+        .org-card.open-spot { border: 2px dashed #78909c; background: linear-gradient(145deg, #f5f5f5, #e0e0e0); opacity: 0.75; cursor: default; }
+        .org-card.open-spot .card-name { color: #78909c; }
+        .org-card.open-spot .card-role { color: #90a4ae; }
+        .open-silhouette { width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 8px; background: #cfd8dc; display: flex; align-items: center; justify-content: center; border: 3px solid #90a4ae; }
+
+        /* FLOOR AREAS */
+        .floor-areas-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; }
+        .floor-area { background: rgba(47,62,131,0.4); border: 2px solid var(--dl-navy-light); border-radius: 12px; min-height: 200px; }
+        .floor-area-header { padding: 15px; border-bottom: 1px solid var(--dl-navy-light); display: flex; justify-content: space-between; align-items: center; }
+        .floor-area-header h3 { margin: 0; font-size: 14px; }
+        .floor-area-body { padding: 10px; min-height: 120px; display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; }
+        .floor-area-body.drag-over { background: rgba(1,204,116,0.05); }
+        .area-avatar-chip { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--dl-navy-light); border-radius: 20px; padding: 5px 12px 5px 5px; cursor: grab; font-size: 12px; }
+        .area-avatar-chip img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+        .area-avatar-chip:hover { border-color: var(--dl-green); }
+
+        /* MODALS */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
+        .modal-overlay.show { display: flex; }
+        .modal { background: #232f66; border: 2px solid var(--dl-navy-light); border-radius: 14px; padding: 25px; max-width: 600px; width: 100%; max-height: 85vh; overflow-y: auto; }
+        .modal h2 { margin-top: 0; color: var(--dl-green); font-size: 18px; }
+        .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+        .modal-actions button { flex: 1; padding: 12px; font-size: 13px; }
+
+        .avatar-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 15px 0; }
+        .avatar-option { width: 80px; height: 90px; border-radius: 12px; border: 3px solid var(--dl-navy-light); cursor: pointer; margin: 0 auto; display: block; transition: 0.3s; background: #e8eef5; padding: 2px; }
+        .avatar-option:hover, .avatar-option.selected { border-color: var(--dl-green); box-shadow: 0 0 20px rgba(1,204,116,0.4); transform: scale(1.05); }
+        .gender-tabs { display: flex; gap: 10px; margin-bottom: 15px; }
+        .gender-tab { padding: 8px 20px; border: 1px solid var(--dl-navy-light); background: var(--dl-navy-dark); color: #8090b8; border-radius: 20px; cursor: pointer; font-size: 12px; }
+        .gender-tab.active { border-color: var(--dl-green); color: var(--dl-green); background: rgba(1,204,116,0.1); }
+
+        .totals-bar { display: flex; justify-content: space-around; background: rgba(26,35,82,0.97); backdrop-filter: blur(10px); padding: 15px; border-top: 2px solid var(--dl-navy-light); position: sticky; bottom: 0; z-index: 100; font-weight: bold; }
+        #clock { color: var(--green); font-family: monospace; font-size: 24px; }
+        .sync-tray { display: flex; gap: 10px; padding: 10px 20px; justify-content: flex-end; background: rgba(26,35,82,0.8); border-bottom: 1px solid var(--dl-navy-light); }
+        .btn-sync { background: var(--dl-navy); color: #b0c0e8; border: 1px solid var(--dl-navy-light); font-size: 10px; }
+        .btn-audit { background: rgba(1,204,116,0.1); color: var(--dl-green); border: 1px solid var(--dl-green); font-size: 10px; }
+        .filter-grid { display: flex; gap: 10px; margin-bottom: 15px; }
+
+        .pto-schedule-item { display: flex; justify-content: space-between; align-items: center; background: var(--dl-navy-dark); padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 12px; }
+        .pto-schedule-item .pto-type { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: bold; }
+        .audit-entry { background: var(--dl-navy-dark); padding: 12px; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid var(--green); font-size: 12px; }
+        .audit-entry.audit-move { border-left-color: var(--dl-green); }
+        .audit-entry.audit-pto { border-left-color: var(--orange); }
+        .audit-entry.audit-sick { border-left-color: var(--red); }
+        .audit-entry.audit-promote { border-left-color: var(--dl-pink); }
+        .audit-entry.audit-terminate { border-left-color: #FF0000; }
+        .audit-entry.audit-area { border-left-color: var(--green); }
+        .audit-entry .audit-time { color: #8090b8; font-size: 10px; }
+        .audit-entry .audit-action { color: #b0c0e8; margin-top: 4px; }
+
+        .photo-upload-zone { border: 2px dashed var(--dl-navy-light); border-radius: 10px; padding: 20px; text-align: center; cursor: pointer; margin: 10px 0; color: #8090b8; transition: 0.3s; }
+        .photo-upload-zone:hover { border-color: var(--dl-green); color: var(--dl-green); }
+
+        .add-spot-btn { background: transparent; border: 2px dashed #8090b8; color: #8090b8; padding: 10px 16px; border-radius: 10px; font-size: 11px; transition: 0.3s; }
+        .add-spot-btn:hover { border-color: var(--dl-green); color: var(--dl-green); }
+
+        /* FLOOR VIEW SEARCH & FLIP */
+        .floor-header-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px; }
+        .floor-header-controls input { flex: 1; min-width: 200px; }
+        .floor-header-controls select { flex: 0 1 150px; }
+        .btn-flip-chart { background: rgba(1,204,116,0.1); color: var(--dl-green); border: 1px solid var(--dl-green); padding: 8px 16px; font-weight: bold; font-size: 12px; }
+        .btn-flip-chart:hover { background: rgba(1,204,116,0.2); }
+
+        /* QUICK-MOVE FLOATING 3x3 BOX - follows scroll */
+        .level-drop-strip { display: none; position: fixed; bottom: 20px; right: 20px; z-index: 9999; width: 280px; background: rgba(26,35,82,0.97); border: 2px solid var(--dl-navy-light); border-radius: 12px; padding: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 15px rgba(1,204,116,0.1); backdrop-filter: blur(10px); }
+        .level-drop-strip.visible { display: block; }
+        .level-drop-strip-label { width: 100%; text-align: center; font-size: 9px; color: #8090b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: bold; }
+        .level-drop-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+        .level-drop-box { background: rgba(47,62,131,0.4); border: 2px solid var(--dl-navy-light); border-radius: 8px; padding: 8px 6px; cursor: grab; text-align: center; font-size: 10px; font-weight: bold; color: #8090b8; transition: 0.3s; user-select: none; }
+        .level-drop-box:hover { border-color: var(--dl-green); color: var(--dl-green); background: rgba(1,204,116,0.08); }
+        .level-drop-box.dragging { opacity: 0.5; transform: scale(0.95); }
+        .level-drop-box .drop-box-count { display: block; font-size: 16px; font-weight: bold; margin-top: 2px; }
+        .org-card.role-drag-over { outline: 3px solid var(--dl-green); outline-offset: 2px; box-shadow: 0 0 20px rgba(1,204,116,0.4); }
+
+        /* PROMINENT ON FLOOR STATUS */
+        .card-status.badge-floor { background: var(--green); color: #000; font-size: 12px; padding: 5px 12px; font-weight: bold; animation: pulse-glow 2s infinite; }
+        @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 5px var(--green), inset 0 0 5px rgba(0,255,0,0.3); } 50% { box-shadow: 0 0 15px var(--green), inset 0 0 8px rgba(0,255,0,0.5); } }
+        .org-card.on-floor { border-color: var(--green); border-width: 3px; box-shadow: 0 0 20px rgba(0,255,0,0.3); }
+
+        /* CHANGE AVATAR BUTTON */
+        .btn-change-avatar { background: var(--dl-green); color: #000; border: none; border-radius: 50%; width: 32px; height: 32px; font-size: 10px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; margin-left: 8px; }
+        .btn-change-avatar:hover { background: #01e680; }
+
+        @media (max-width: 768px) {
+            .level-drop-sidebar { display: none; }
+            .floor-header-controls { flex-direction: column; }
+            .floor-header-controls input, .floor-header-controls select { width: 100%; }
+            .mobile-hide { display: none; }
+            td, th { padding: 10px 5px; font-size: 12px; }
+            .weekly-grid { grid-template-columns: repeat(2, 1fr); }
+            .totals-bar { font-size: 10px; flex-wrap: wrap; gap: 10px; padding: 10px; }
+            .org-level-cards { flex-direction: column; align-items: center; }
+            .org-card { width: 140px; }
+            .nav-tab { padding: 12px 15px; font-size: 11px; }
+            .floor-areas-container { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen">
+    <div class="login-card">
+        <h1>FLOOR COMMAND</h1>
+        <div class="subtitle">DoorLoop Floor Management System</div>
+        <div class="form-group"><label>Email</label><input type="email" id="loginEmail" placeholder="your@email.com"></div>
+        <div class="form-group"><label>Password</label><input type="password" id="loginPassword" placeholder="Password (min 6 chars)"></div>
+        <div class="login-actions">
+            <button class="btn-signin" onclick="handleSignIn()">SIGN IN</button>
+            <button class="btn-signup" onclick="handleSignUp()">SIGN UP</button>
+        </div>
+        <div class="login-message" id="loginMessage"></div>
+    </div>
+</div>
+
+<!-- MAIN APP (hidden until authenticated) -->
+<div id="appContainer">
+
+<div class="nav-bar">
+    <div class="nav-tab active" onclick="switchView('database', this)">DATABASE VIEW</div>
+    <div class="nav-tab" onclick="switchView('floor', this)">FLOOR VIEW</div>
+    <div class="nav-tab" onclick="switchView('areas', this)">FLOOR AREAS</div>
+    <div id="navClock" style="margin-left:auto; padding:15px; color:var(--green); font-family:monospace; font-size:16px;">00:00:00</div>
+</div>
+
+<div class="sync-tray">
+    <div class="user-bar"><span id="userEmail"></span><button class="btn-logout" onclick="handleLogout()">LOGOUT</button></div>
+    <button class="btn-audit" onclick="showAuditModal()">AUDIT LOGS</button>
+    <button class="btn-sync" onclick="exportData()">EXPORT (COPY)</button>
+    <button class="btn-sync" onclick="importData()">IMPORT (PASTE)</button>
+</div>
+
+<div class="view-panel active" id="view-database">
+    <div class="card mobile-hide">
+        <h3 style="margin-top:0; color:#01CC74; font-size:14px;">+ ADD REPRESENTATIVE</h3>
+        <div class="entry-form">
+            <div><label>Name</label><input type="text" id="newName" placeholder="Name"></div>
+            <div><label>Gender</label><select id="newGender"><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option></select></div>
+            <div><label>Level</label><select id="newLevel"><option>T1</option><option>Phone</option><option>ATS</option><option>BKaaS / Zoom</option><option>ZOOM</option><option>Lead</option></select></div>
+            <div><label>Start</label><input type="time" id="newStart" value="09:00"></div>
+            <div><label>End</label><input type="time" id="newEnd" value="18:00"></div>
+            <div><label>Lunch</label><input type="time" id="newLunch" value="13:00"></div>
+            <div><label>WFH</label><input type="text" id="newWFH" placeholder="e.g. W, F"></div>
+            <div><button style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000; height:35px; width:100%;" onclick="addNewRep()">ADD TO FLOOR</button></div>
+        </div>
+    </div>
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h2 style="margin:0; font-size: 18px;">FLOOR COMMAND CENTER</h2>
+            <div id="clock">00:00:00 AM</div>
+        </div>
+        <div class="filter-grid">
+            <input type="text" id="searchName" placeholder="Search Agent Name..." oninput="renderTable()" style="flex:2;">
+            <select id="filterLevel" onchange="renderTable()" style="flex:1;"><option value="All">All Levels</option><option>T1</option><option>Phone</option><option>ATS</option><option>BKaaS / Zoom</option><option>ZOOM</option><option>Lead</option></select>
+        </div>
+        <table>
+            <thead><tr>
+                <th style="width:45px;"></th><th>Agent</th><th class="mobile-hide">Level</th><th>Shift</th><th>Lunch</th><th class="mobile-hide">WFH</th><th>Status</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="view-panel" id="view-floor">
+    <div class="card" style="padding:10px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:15px;">
+            <h2 style="margin:0; font-size:16px;">HIERARCHY - Drag agents between levels</h2>
+            <button id="btnFlipChart" class="btn-flip-chart" onclick="toggleFlipChart()">FLIP CHART</button>
+        </div>
+        <div class="floor-header-controls">
+            <input type="text" id="floorSearchName" placeholder="Search Agent Name..." oninput="renderFloorView()" style="flex:2;">
+            <select id="floorLevelFilter" onchange="renderFloorView()" style="flex:1;"><option value="All">All Levels</option><option>T1</option><option>Phone</option><option>ATS</option><option>BKaaS / Zoom</option><option>ZOOM</option><option>Lead</option></select>
+            <select id="floorStatusFilter" onchange="renderFloorView()" style="width:auto;">
+                <option value="all">All Statuses</option>
+                <option value="floor">On Floor Only</option>
+                <option value="out">Out Only</option>
+            </select>
+        </div>
+    </div>
+    <div class="org-chart" id="orgChart"></div>
+</div>
+
+<div class="level-drop-strip" id="levelDropSidebar"></div>
+
+<div class="view-panel" id="view-areas">
+    <div class="card" style="padding:10px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2 style="margin:0; font-size:16px;">FLOOR AREAS - Who is Where</h2>
+            <button style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;" onclick="addNewArea()">+ ADD AREA</button>
+        </div>
+    </div>
+    <div class="floor-areas-container" id="floorAreasContainer"></div>
+    <div class="card" style="margin-top:15px;">
+        <h3 style="margin-top:0; color:#8090b8; font-size:13px;">UNASSIGNED AGENTS</h3>
+        <div id="unassignedAgents" style="display:flex; flex-wrap:wrap; gap:10px; min-height:60px;"></div>
+    </div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="avatarModal">
+    <div class="modal">
+        <h2>CHOOSE AVATAR</h2>
+        <p style="color:#8090b8; font-size:12px;" id="avatarModalName"></p>
+        <div class="gender-tabs" id="genderTabs">
+            <div class="gender-tab active" data-gender="male" onclick="switchAvatarGender('male', this)">Male</div>
+            <div class="gender-tab" data-gender="female" onclick="switchAvatarGender('female', this)">Female</div>
+        </div>
+        <div class="avatar-grid" id="avatarGrid"></div>
+        <div class="photo-upload-zone" onclick="document.getElementById('photoUpload').click()">
+            CLICK TO UPLOAD A PHOTO<br><span style="font-size:10px;">JPG, PNG supported</span>
+            <input type="file" id="photoUpload" accept="image/*" style="display:none;" onchange="handlePhotoUpload(event)">
+        </div>
+        <div id="photoPreview" style="display:none; text-align:center; margin:10px 0;">
+            <img id="photoPreviewImg" style="width:80px; height:80px; border-radius:50%; object-fit:cover; object-position:center; border:3px solid #01CC74;">
+        </div>
+        <div class="modal-actions">
+            <button onclick="closeModal('avatarModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
+            <button onclick="saveAvatar()" style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;">SAVE AVATAR</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="oooModal">
+    <div class="modal">
+        <h2 id="oooModalTitle">MARK OUT OF OFFICE</h2>
+        <p style="color:#8090b8; font-size:12px;" id="oooModalName"></p>
+        <div style="margin-bottom:15px;"><label>Type</label><select id="oooType"><option value="sick">Sick</option><option value="pto">PTO</option><option value="ooo">Out of Office</option></select></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:15px;">
+            <div><label>Start Date</label><input type="date" id="oooStart"></div>
+            <div><label>End Date</label><input type="date" id="oooEnd"></div>
+        </div>
+        <div style="margin-bottom:15px;"><label>Reason</label><textarea id="oooReason" placeholder="Enter reason (optional)..."></textarea></div>
+        <div class="modal-actions">
+            <button onclick="closeModal('oooModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
+            <button onclick="saveOoo()" style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;">SAVE</button>
+        </div>
+        <div style="margin-top:20px;"><h3 style="color:#8090b8; font-size:12px; text-transform:uppercase;">Scheduled Time Off</h3><div id="scheduledPtoList"></div></div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="moveModal">
+    <div class="modal">
+        <h2 style="color:var(--dl-pink);">MOVE AGENT</h2>
+        <p style="color:#8090b8; font-size:12px;" id="moveModalName"></p>
+        <p style="color:#8090b8; font-size:11px;" id="moveModalCurrent"></p>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+            <button onclick="openPromoteModal(currentModalAgent);closeModal('moveModal');" style="background:rgba(1,204,116,0.2); border:1px solid #01CC74; color:#01CC74; padding:14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:bold; text-align:left;">MOVE TO DIFFERENT LEVEL<br><span style="font-size:10px; font-weight:normal; opacity:0.7;">Reassign to another position on the ladder</span></button>
+            <button onclick="openPromotionLogModal(currentModalAgent);closeModal('moveModal');" style="background:rgba(0,200,83,0.2); border:1px solid #01CC74; color:#01CC74; padding:14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:bold; text-align:left;">PROMOTED<br><span style="font-size:10px; font-weight:normal; opacity:0.7;">Log a promotion and move up the ladder</span></button>
+            <button onclick="openTerminateModal(currentModalAgent);closeModal('moveModal');" style="background:rgba(255,68,68,0.2); border:1px solid #ff4444; color:#ff4444; padding:14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:bold; text-align:left;">NO LONGER WITH COMPANY<br><span style="font-size:10px; font-weight:normal; opacity:0.7;">Terminated, resigned, or transferred out</span></button>
+        </div>
+        <div class="modal-actions" style="margin-top:15px;">
+            <button onclick="closeModal('moveModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="promoteModal">
+    <div class="modal">
+        <h2 style="color:var(--dl-pink);">MOVE TO LEVEL</h2>
+        <p style="color:#8090b8; font-size:12px;" id="promoteModalName"></p>
+        <div style="margin-bottom:15px;"><label>Current Level</label><input type="text" id="promoteCurrentLevel" readonly style="color:#8090b8;"></div>
+        <div style="margin-bottom:15px;"><label>New Level</label><select id="promoteNewLevel"><option>T1</option><option>Phone</option><option>ATS</option><option>BKaaS / Zoom</option><option>ZOOM</option><option>Lead</option></select></div>
+        <div class="modal-actions">
+            <button onclick="closeModal('promoteModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
+            <button onclick="confirmPromotion()" style="background:var(--dl-pink); color:#fff;">CONFIRM MOVE</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="terminateModal">
+    <div class="modal">
+        <h2 style="color:var(--red);">REMOVE AGENT FROM FLOOR</h2>
+        <p style="color:#8090b8; font-size:12px;" id="terminateModalName"></p>
+        <div style="margin-bottom:15px;"><label>Reason</label><select id="terminateReason"><option value="terminated">Terminated</option><option value="resigned">Resigned</option><option value="transferred">Transferred</option><option value="other">Other</option></select></div>
+        <div style="margin-bottom:15px;"><label>Notes</label><textarea id="terminateNotes" placeholder="Additional notes..."></textarea></div>
+        <div style="background:rgba(255,165,0,0.1); border:1px solid var(--orange); border-radius:8px; padding:12px; margin-bottom:15px;">
+            <div style="font-size:12px; color:var(--orange); margin-bottom:5px;">REPLACEMENT NEEDED</div>
+            <label style="color:var(--orange);">Add a replacement?</label>
+            <select id="terminateReplacement"><option value="later">Add someone later</option><option value="now">Yes, add replacement now</option></select>
+        </div>
+        <div class="modal-actions">
+            <button onclick="closeModal('terminateModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
+            <button onclick="confirmTermination()" style="background:var(--red); color:#fff;">CONFIRM REMOVAL</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="replacementModal">
+    <div class="modal">
+        <h2 style="color:#01CC74;">ADD REPLACEMENT</h2>
+        <p style="color:#8090b8; font-size:12px;" id="replacementInfo"></p>
+        <div style="display:grid; gap:10px;">
+            <div><label>Name</label><input type="text" id="repName" placeholder="New agent name"></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div><label>Gender</label><select id="repGender"><option value="male">Male</option><option value="female">Female</option></select></div>
+                <div><label>Level</label><select id="repLevel"><option>T1</option><option>Phone</option><option>ATS</option><option>BKaaS / Zoom</option><option>ZOOM</option><option>Lead</option></select></div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
+                <div><label>Start</label><input type="time" id="repStart" value="09:00"></div>
+                <div><label>End</label><input type="time" id="repEnd" value="18:00"></div>
+                <div><label>Lunch</label><input type="time" id="repLunch" value="13:00"></div>
+            </div>
+            <div><label>WFH Days</label><input type="text" id="repWFH" placeholder="e.g. W, F"></div>
+        </div>
+        <div class="modal-actions">
+            <button onclick="closeModal('replacementModal')" style="background:#3d4f99; color:#fff;">SKIP</button>
+            <button onclick="addReplacement()" style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;">ADD TO FLOOR</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="spotModal">
+    <div class="modal">
+        <h2 style="color:#01CC74;">ADD SPOT</h2>
+        <p id="spotModalInfo" style="color:#8090b8; font-size:12px;"></p>
+        <div style="margin-bottom:15px;">
+            <label>Spot Type</label>
+            <select id="spotType">
+                <option value="open">OPEN - Unfilled position</option>
+                <option value="floating">FLOATING - Flexible assignment</option>
+            </select>
+        </div>
+        <div style="margin-bottom:15px;"><label>Label (optional)</label><input type="text" id="spotLabel" placeholder="e.g. Open Spot 1"></div>
+        <div class="modal-actions">
+            <button onclick="closeModal('spotModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
+            <button onclick="saveSpot()" style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;">ADD SPOT</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="auditModal">
+    <div class="modal" style="max-width:800px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2>AUDIT TRAIL</h2>
+            <button onclick="closeModal('auditModal')" style="background:var(--red); color:#fff;">CLOSE</button>
+        </div>
+        <div style="display:flex; gap:10px; margin-bottom:15px;">
+            <input type="text" id="auditSearch" placeholder="Search logs..." oninput="renderAuditLogs()" style="flex:2;">
+            <select id="auditFilter" onchange="renderAuditLogs()" style="flex:1;">
+                <option value="all">All Types</option><option value="move">Moves</option><option value="pto">PTO</option><option value="sick">Sick</option><option value="promote">Promotions</option><option value="terminate">Terminations</option><option value="area">Area Changes</option>
+            </select>
+        </div>
+        <div id="auditContent" style="max-height:60vh; overflow-y:auto;"></div>
+    </div>
+</div>
+
+<div class="totals-bar">
+    <div style="color:#01CC74">TOTAL: <span id="totalVisible">0</span></div>
+    <div style="color:var(--green)">ON FLOOR: <span id="totalFloor">0</span></div>
+    <div style="color:var(--orange)">LUNCH: <span id="totalLunch">0</span></div>
+    <div style="color:var(--red)">OUT: <span id="totalOut">0</span></div>
+</div>
+
+</div><!-- END appContainer -->
+
+<script>
+// ==================== SUPABASE CONFIG ====================
+// PASTE YOUR SUPABASE CREDENTIALS HERE:
+var SUPABASE_URL = 'https://vndaswatzpckwkqmkomi.supabase.co';
+var SUPABASE_ANON_KEY = 'sb_publishable_tmf0ZlNqgvvVEUrrxGjDAA_l71E9gpM';
+var sb = null; // Supabase client
+var currentUser = null;
+
+// Legacy keys (kept for fallback/export)
+var DATA_KEY = 'dl_tracker_v3_data';
+var LOGS_KEY = 'dl_tracker_v3_audit';
+var AREAS_KEY = 'dl_tracker_v3_areas';
+var SPOTS_KEY = 'dl_tracker_v3_spots';
+var FLIP_STATE_KEY = 'dl_tracker_v3_flip';
+
+var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+var levelOptions = ["T1","Phone","ATS","BKaaS / Zoom","ZOOM","Lead"];
+var levelOrder = ["Lead","BKaaS / Zoom","ZOOM","ATS","Phone","T1"];
+var levelLabels = {"Lead":"LEAD","BKaaS / Zoom":"BOOKKEEPING","ZOOM":"ZOOM","ATS":"ATS","Phone":"PHONE CALLS","T1":"TIER 1 SUPPORT"};
+var isChartFlipped = false;
+
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+}
+
+// ==================== AUTH FUNCTIONS ====================
+async function handleSignIn() {
+    var email = document.getElementById('loginEmail').value;
+    var pwd = document.getElementById('loginPassword').value;
+    if (!email || !pwd) { showLoginMsg('Enter email and password.', 'error'); return; }
+    var { data, error } = await sb.auth.signInWithPassword({ email: email, password: pwd });
+    if (error) { showLoginMsg(error.message, 'error'); return; }
+    currentUser = data.user;
+    startApp();
+}
+async function handleSignUp() {
+    var email = document.getElementById('loginEmail').value;
+    var pwd = document.getElementById('loginPassword').value;
+    if (!email || !pwd) { showLoginMsg('Enter email and password.', 'error'); return; }
+    if (pwd.length < 6) { showLoginMsg('Password must be at least 6 characters.', 'error'); return; }
+    var { data, error } = await sb.auth.signUp({ email: email, password: pwd });
+    if (error) { showLoginMsg(error.message, 'error'); return; }
+    if (data.user && !data.session) {
+        showLoginMsg('Check your email to confirm your account, then sign in.', 'success');
+    } else {
+        currentUser = data.user;
+        startApp();
+    }
+}
+async function handleLogout() {
+    await sb.auth.signOut();
+    currentUser = null;
+    document.getElementById('appContainer').style.display = 'none';
+    document.getElementById('loginScreen').style.display = 'flex';
+}
+function showLoginMsg(msg, type) {
+    var el = document.getElementById('loginMessage');
+    el.textContent = msg;
+    el.className = 'login-message ' + type;
+}
+async function startApp() {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'block';
+    document.getElementById('userEmail').textContent = currentUser.email;
+    await initData();
+    renderAll();
+    setupRealtime();
+    setInterval(updateClock, 1000);
+    updateClock();
+}
+function setupRealtime() {
+    sb.channel('floor-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, function() { reloadQuiet(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'floor_areas' }, function() { reloadQuiet(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'open_spots' }, function() { reloadQuiet(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, function() { reloadQuiet(); })
+        .subscribe();
+}
+var _reloadTimer = null;
+function reloadQuiet() {
+    // Debounce realtime reloads (300ms)
+    clearTimeout(_reloadTimer);
+    _reloadTimer = setTimeout(async function() { await initData(); renderAll(); }, 300);
+}
+
+// ==================== ILLUSTRATED AVATAR SVGs ====================
+function makeAvatar(gender, variant, skinTone, hairColor, shirtColor, accessory) {
+    var skins = {light:'#FFDBB4',medium:'#C68642',tan:'#D2A679',dark:'#8D5524',deep:'#6B3A1F'};
+    var sk = skins[skinTone]||skins.medium;
+    var darkerSkin = {light:'#E8C9A0',medium:'#A86E30',tan:'#B88A60',dark:'#6B3A1F',deep:'#4A2510'}[skinTone]||'#A86E30';
+    var shirts = {blue:'#1976D2',teal:'#00897B',pink:'#E91E63',navy:'#1A237E',gray:'#546E7A',green:'#2E7D32',purple:'#6A1B9A',white:'#ECEFF1'};
+    var sc = shirts[shirtColor]||shirts.blue;
+    var hairs = {black:'#1a1a1a',brown:'#3E2723',darkbrown:'#4A2F1B',blonde:'#C9A96E',red:'#A03020',gray:'#78909C',auburn:'#7B3F00'};
+    var hc = hairs[hairColor]||hairs.black;
+
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 140">';
+    // Background circle
+    svg += '<rect width="120" height="140" rx="12" fill="#e8eef5"/>';
+    // Body/shirt
+    svg += '<path d="M20 130 Q20 105 40 95 L50 92 Q60 98 70 92 L80 95 Q100 105 100 130 Z" fill="'+sc+'"/>';
+    // Collar
+    if (shirtColor !== 'white') {
+        svg += '<path d="M50 92 L55 102 L60 95 L65 102 L70 92 Q60 98 50 92Z" fill="'+sc+'" opacity="0.7"/>';
+        svg += '<path d="M48 93 L53 100" stroke="#fff" stroke-width="0.5" opacity="0.3"/>';
+        svg += '<path d="M72 93 L67 100" stroke="#fff" stroke-width="0.5" opacity="0.3"/>';
+    }
+    // Neck
+    svg += '<rect x="52" y="82" width="16" height="14" rx="4" fill="'+sk+'"/>';
+    // Head
+    svg += '<ellipse cx="60" cy="60" rx="28" ry="30" fill="'+sk+'"/>';
+    // Ears
+    svg += '<ellipse cx="32" cy="62" rx="5" ry="7" fill="'+sk+'"/>';
+    svg += '<ellipse cx="32" cy="62" rx="3" ry="5" fill="'+darkerSkin+'"/>';
+    svg += '<ellipse cx="88" cy="62" rx="5" ry="7" fill="'+sk+'"/>';
+    svg += '<ellipse cx="88" cy="62" rx="3" ry="5" fill="'+darkerSkin+'"/>';
+
+    // HAIR by gender and variant
+    if (gender === 'female') {
+        switch(variant % 8) {
+            case 0: // Long straight
+                svg += '<ellipse cx="60" cy="42" rx="30" ry="22" fill="'+hc+'"/>';
+                svg += '<path d="M30 45 Q28 80 32 100 Q34 85 36 70 L36 52Z" fill="'+hc+'"/>';
+                svg += '<path d="M90 45 Q92 80 88 100 Q86 85 84 70 L84 52Z" fill="'+hc+'"/>';
+                break;
+            case 1: // Ponytail
+                svg += '<ellipse cx="60" cy="42" rx="30" ry="22" fill="'+hc+'"/>';
+                svg += '<path d="M75 35 Q90 30 88 55 Q86 45 80 40Z" fill="'+hc+'"/>';
+                svg += '<circle cx="90" cy="38" r="5" fill="'+hc+'"/>';
+                svg += '<path d="M90 43 Q95 60 90 80" stroke="'+hc+'" stroke-width="8" fill="none" stroke-linecap="round"/>';
+                break;
+            case 2: // Short bob
+                svg += '<ellipse cx="60" cy="42" rx="30" ry="22" fill="'+hc+'"/>';
+                svg += '<path d="M30 45 Q28 65 34 75 Q36 65 36 55Z" fill="'+hc+'"/>';
+                svg += '<path d="M90 45 Q92 65 86 75 Q84 65 84 55Z" fill="'+hc+'"/>';
+                break;
+            case 3: // Curly long
+                svg += '<ellipse cx="60" cy="42" rx="30" ry="22" fill="'+hc+'"/>';
+                svg += '<path d="M30 48 Q25 60 28 75 Q32 85 30 95" stroke="'+hc+'" stroke-width="10" fill="none"/>';
+                svg += '<path d="M90 48 Q95 60 92 75 Q88 85 90 95" stroke="'+hc+'" stroke-width="10" fill="none"/>';
+                svg += '<circle cx="30" cy="95" r="5" fill="'+hc+'"/><circle cx="90" cy="95" r="5" fill="'+hc+'"/>';
+                break;
+            case 4: // Bun
+                svg += '<ellipse cx="60" cy="42" rx="30" ry="22" fill="'+hc+'"/>';
+                svg += '<circle cx="60" cy="22" r="10" fill="'+hc+'"/>';
+                break;
+            case 5: // Wavy shoulder
+                svg += '<ellipse cx="60" cy="42" rx="30" ry="22" fill="'+hc+'"/>';
+                svg += '<path d="M30 48 Q26 60 30 72 Q34 80 30 90" stroke="'+hc+'" stroke-width="9" fill="none"/>';
+                svg += '<path d="M90 48 Q94 60 90 72 Q86 80 90 90" stroke="'+hc+'" stroke-width="9" fill="none"/>';
+                break;
+            case 6: // Side part long
+                svg += '<path d="M35 35 Q40 20 65 22 Q85 25 88 42 L88 50 Q86 40 80 35 Q70 28 55 30 Q40 32 35 42Z" fill="'+hc+'"/>';
+                svg += '<path d="M30 45 Q27 70 30 90 Q33 75 34 60Z" fill="'+hc+'"/>';
+                svg += '<path d="M90 45 Q93 70 90 90 Q87 75 86 60Z" fill="'+hc+'"/>';
+                break;
+            case 7: // Pixie
+                svg += '<path d="M32 48 Q35 25 60 22 Q82 25 88 45 Q85 32 70 28 Q50 24 38 35Z" fill="'+hc+'"/>';
+                svg += '<path d="M32 48 Q28 42 35 36" fill="'+hc+'"/>';
+                break;
+        }
+    } else {
+        switch(variant % 8) {
+            case 0: // Short classic
+                svg += '<path d="M32 50 Q35 30 60 28 Q85 30 88 50 L86 42 Q82 28 60 25 Q38 28 34 42Z" fill="'+hc+'"/>';
+                break;
+            case 1: // Fade
+                svg += '<path d="M35 52 Q38 30 60 26 Q82 30 85 52 L84 40 Q80 26 60 23 Q40 26 36 40Z" fill="'+hc+'"/>';
+                svg += '<path d="M34 55 Q33 50 34 45" stroke="'+hc+'" stroke-width="3"/>';
+                svg += '<path d="M86 55 Q87 50 86 45" stroke="'+hc+'" stroke-width="3"/>';
+                break;
+            case 2: // Curly top
+                svg += '<path d="M35 48 Q38 25 60 22 Q82 25 85 48" fill="'+hc+'"/>';
+                svg += '<circle cx="45" cy="28" r="6" fill="'+hc+'"/>';
+                svg += '<circle cx="55" cy="24" r="6" fill="'+hc+'"/>';
+                svg += '<circle cx="65" cy="24" r="6" fill="'+hc+'"/>';
+                svg += '<circle cx="75" cy="28" r="6" fill="'+hc+'"/>';
+                break;
+            case 3: // Side swept
+                svg += '<path d="M30 48 Q34 28 60 25 Q85 28 88 48 L86 38 Q82 25 60 22 Q38 25 34 38Z" fill="'+hc+'"/>';
+                svg += '<path d="M30 48 Q28 40 32 34 Q36 28 42 26" fill="'+hc+'"/>';
+                break;
+            case 4: // Buzz
+                svg += '<path d="M34 52 Q36 35 60 32 Q84 35 86 52 Q84 38 60 34 Q36 38 34 52Z" fill="'+hc+'" opacity="0.6"/>';
+                break;
+            case 5: // Textured
+                svg += '<path d="M32 50 Q36 28 60 24 Q84 28 88 50 L86 38 Q82 24 60 20 Q38 24 34 38Z" fill="'+hc+'"/>';
+                break;
+            case 6: // Wavy
+                svg += '<path d="M32 50 Q34 30 50 25 Q60 22 70 25 Q86 30 88 50" fill="'+hc+'"/>';
+                svg += '<path d="M40 30 Q45 24 55 26" fill="'+hc+'"/>';
+                break;
+            case 7: // Crew cut
+                svg += '<path d="M35 50 Q38 32 60 28 Q82 32 85 50 L84 40 Q80 30 60 26 Q40 30 36 40Z" fill="'+hc+'"/>';
+                break;
+        }
+    }
+
+    // Eyes
+    svg += '<ellipse cx="48" cy="62" rx="4" ry="4.5" fill="white"/>';
+    svg += '<ellipse cx="72" cy="62" rx="4" ry="4.5" fill="white"/>';
+    svg += '<circle cx="49" cy="62" r="2.5" fill="#2C1810"/>';
+    svg += '<circle cx="73" cy="62" r="2.5" fill="#2C1810"/>';
+    svg += '<circle cx="49.5" cy="61.5" r="0.8" fill="white"/>';
+    svg += '<circle cx="73.5" cy="61.5" r="0.8" fill="white"/>';
+    // Eyebrows
+    svg += '<path d="M42 56 Q48 53 54 56" stroke="'+hc+'" stroke-width="1.5" fill="none"/>';
+    svg += '<path d="M66 56 Q72 53 78 56" stroke="'+hc+'" stroke-width="1.5" fill="none"/>';
+    // Nose
+    svg += '<path d="M58 65 Q60 70 62 65" stroke="'+darkerSkin+'" stroke-width="1" fill="none"/>';
+    // Mouth (smile)
+    svg += '<path d="M52 76 Q60 82 68 76" stroke="#c0392b" stroke-width="1.5" fill="none"/>';
+    svg += '<path d="M54 76 Q60 80 66 76" fill="#e57373" opacity="0.4"/>';
+
+    // Accessory
+    if (accessory === 'headset') {
+        svg += '<path d="M30 55 Q28 40 32 35" stroke="#37474F" stroke-width="3" fill="none"/>';
+        svg += '<path d="M90 55 Q92 40 88 35" stroke="#37474F" stroke-width="3" fill="none"/>';
+        svg += '<rect x="26" y="52" width="8" height="12" rx="3" fill="#37474F"/>';
+        svg += '<rect x="86" y="52" width="8" height="12" rx="3" fill="#37474F"/>';
+        svg += '<path d="M30 35 Q60 28 90 35" stroke="#37474F" stroke-width="3" fill="none"/>';
+        svg += '<circle cx="28" cy="68" r="4" fill="#37474F"/>';
+        svg += '<path d="M28 72 Q28 80 38 82" stroke="#37474F" stroke-width="2" fill="none"/>';
+        svg += '<circle cx="38" cy="82" r="3" fill="#37474F"/>';
+    } else if (accessory === 'glasses') {
+        svg += '<rect x="40" y="58" width="16" height="10" rx="5" stroke="#37474F" stroke-width="1.5" fill="none"/>';
+        svg += '<rect x="64" y="58" width="16" height="10" rx="5" stroke="#37474F" stroke-width="1.5" fill="none"/>';
+        svg += '<line x1="56" y1="63" x2="64" y2="63" stroke="#37474F" stroke-width="1.5"/>';
+        svg += '<line x1="40" y1="63" x2="32" y2="61" stroke="#37474F" stroke-width="1"/>';
+        svg += '<line x1="80" y1="63" x2="88" y2="61" stroke="#37474F" stroke-width="1"/>';
+    } else if (accessory === 'phone') {
+        svg += '<rect x="85" y="68" width="8" height="16" rx="2" fill="#37474F" transform="rotate(15 89 76)"/>';
+        svg += '<rect x="86" y="70" width="6" height="10" rx="1" fill="#546E7A" transform="rotate(15 89 76)"/>';
+    }
+
+    svg += '</svg>';
+    return svg;
+}
+
+var avatarConfigs = {
+    male: [
+        {skin:'light',hair:'brown',shirt:'blue',acc:'headset'},
+        {skin:'medium',hair:'black',shirt:'teal',acc:'phone'},
+        {skin:'dark',hair:'black',shirt:'navy',acc:'glasses'},
+        {skin:'tan',hair:'darkbrown',shirt:'green',acc:'headset'},
+        {skin:'light',hair:'blonde',shirt:'gray',acc:'none'},
+        {skin:'deep',hair:'black',shirt:'blue',acc:'headset'},
+        {skin:'medium',hair:'auburn',shirt:'white',acc:'phone'},
+        {skin:'light',hair:'gray',shirt:'navy',acc:'glasses'}
+    ],
+    female: [
+        {skin:'light',hair:'blonde',shirt:'teal',acc:'headset'},
+        {skin:'medium',hair:'black',shirt:'pink',acc:'phone'},
+        {skin:'dark',hair:'black',shirt:'blue',acc:'headset'},
+        {skin:'tan',hair:'darkbrown',shirt:'teal',acc:'none'},
+        {skin:'light',hair:'red',shirt:'gray',acc:'glasses'},
+        {skin:'deep',hair:'black',shirt:'green',acc:'headset'},
+        {skin:'medium',hair:'brown',shirt:'purple',acc:'phone'},
+        {skin:'light',hair:'auburn',shirt:'navy',acc:'headset'}
+    ]
+};
+
+function getAvatarSrc(agent) {
+    if (agent.avatarPhoto) return agent.avatarPhoto;
+    var g = agent.gender || 'male';
+    var idx = agent.avatarIndex || 0;
+    var cfg = avatarConfigs[g === 'female' ? 'female' : 'male'][idx % 8];
+    var svg = makeAvatar(g === 'female' ? 'female' : 'male', idx, cfg.skin, cfg.hair, cfg.shirt, cfg.acc);
+    return 'data:image/svg+xml;base64,' + btoa(svg);
+}
+
+function getSilhouetteSvg() {
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 140">';
+    svg += '<rect width="120" height="140" rx="12" fill="#e0e0e0"/>';
+    svg += '<path d="M20 130 Q20 105 40 95 L50 92 Q60 98 70 92 L80 95 Q100 105 100 130 Z" fill="#b0bec5"/>';
+    svg += '<rect x="52" y="82" width="16" height="14" rx="4" fill="#b0bec5"/>';
+    svg += '<ellipse cx="60" cy="60" rx="28" ry="30" fill="#b0bec5"/>';
+    svg += '</svg>';
+    return 'data:image/svg+xml;base64,' + btoa(svg);
+}
+
+// ==================== DATA ====================
+var agents = [];
+var floorAreas = [];
+var openSpots = [];
+var auditLogs = [];
+var currentModalAgent = -1;
+var selectedAvatarIndex = 0;
+var selectedAvatarGender = 'male';
+var pendingPhotoData = null;
+var pendingSpotLevel = '';
+
+function buildWeek(s, e, l) {
+    var obj = {};
+    days.forEach(function(d) { obj[d] = { start: s, end: e, lunch: l, isOff: (d==="Saturday" || d==="Sunday") }; });
+    return obj;
+}
+
+var initialAgents = [
+    {name:"Aileen",level:"Phone",wfh:"F",gender:"female",avatarIndex:0,schedule:buildWeek("09:00","18:00","12:30")},
+    {name:"Alejandro",level:"T1",wfh:"-",gender:"male",avatarIndex:1,schedule:buildWeek("09:00","18:00","12:30")},
+    {name:"Alex",level:"Phone",wfh:"-",gender:"male",avatarIndex:2,schedule:buildWeek("09:00","18:00","13:30")},
+    {name:"Andres",level:"T1",wfh:"-",gender:"male",avatarIndex:3,schedule:buildWeek("09:00","18:00","13:00")},
+    {name:"Andrew",level:"T1",wfh:"-",gender:"male",avatarIndex:4,schedule:buildWeek("11:00","20:00","14:30")},
+    {name:"Carlos",level:"BKaaS / Zoom",wfh:"W,F",gender:"male",avatarIndex:5,schedule:buildWeek("10:00","19:00","15:30")},
+    {name:"Char",level:"BKaaS / Zoom",wfh:"W,F",gender:"female",avatarIndex:1,schedule:buildWeek("09:00","18:00","12:00")},
+    {name:"Diana",level:"Phone",wfh:"-",gender:"female",avatarIndex:2,schedule:buildWeek("10:00","19:00","14:00")},
+    {name:"Erick",level:"T1",wfh:"-",gender:"male",avatarIndex:6,schedule:buildWeek("09:00","18:00","12:00")},
+    {name:"Franco",level:"T1",wfh:"W",gender:"male",avatarIndex:7,schedule:buildWeek("09:00","18:00","14:00")},
+    {name:"Frank",level:"T1",wfh:"-",gender:"male",avatarIndex:0,schedule:buildWeek("09:00","18:00","12:30")},
+    {name:"Gabriel",level:"T1",wfh:"-",gender:"male",avatarIndex:1,schedule:buildWeek("09:00","18:00","13:00")},
+    {name:"Johnny",level:"T1",wfh:"-",gender:"male",avatarIndex:2,schedule:buildWeek("09:00","18:00","12:00")},
+    {name:"Kahlil",level:"ATS",wfh:"W,F",gender:"male",avatarIndex:3,schedule:buildWeek("09:00","18:00","14:00")},
+    {name:"Matthew",level:"Phone",wfh:"-",gender:"male",avatarIndex:4,schedule:buildWeek("09:00","18:00","15:30")},
+    {name:"Mei",level:"Lead",wfh:"-",gender:"female",avatarIndex:3,schedule:buildWeek("09:00","18:00","13:00")},
+    {name:"Milly",level:"T1",wfh:"-",gender:"female",avatarIndex:4,schedule:buildWeek("09:00","18:00","12:00")},
+    {name:"Nicole",level:"T1",wfh:"F",gender:"female",avatarIndex:5,schedule:buildWeek("08:00","17:00","15:00")},
+    {name:"Paolo",level:"T1",wfh:"W",gender:"male",avatarIndex:5,schedule:buildWeek("08:00","17:00","13:00")},
+    {name:"Randall",level:"ATS",wfh:"W,F",gender:"male",avatarIndex:6,schedule:buildWeek("09:00","18:00","12:00")},
+    {name:"Tanner",level:"ATS",wfh:"T/TH",gender:"male",avatarIndex:7,schedule:buildWeek("09:00","18:00","13:00")},
+    {name:"Torez",level:"ZOOM",wfh:"F",gender:"male",avatarIndex:0,schedule:buildWeek("09:00","18:00","13:00")}
+];
+
+var defaultAreas = [
+    {id:'area-main',name:'Main Floor',color:'#01CC74'},
+    {id:'area-phones',name:'Phone Bay',color:'#1665D8'},
+    {id:'area-zoom',name:'Zoom Room',color:'#FF4998'},
+    {id:'area-training',name:'Training Area',color:'#FFA500'}
+];
+
+async function initData() {
+    // Load agents from Supabase
+    var res = await sb.from('agents').select('*').order('name');
+    if (res.data && res.data.length > 0) {
+        agents = res.data.map(function(r) {
+            return {
+                id: r.id, name: r.name, level: r.level, wfh: r.wfh || '-',
+                gender: r.gender || 'male', avatarIndex: r.avatar_index || 0,
+                avatarPhoto: r.avatar_photo || null,
+                sickUntil: r.sick_until, ptoUntil: r.pto_until,
+                sickReason: r.sick_reason, ptoReason: r.pto_reason,
+                area: r.area, fullWeek: r.full_week || false,
+                schedule: r.schedule || buildWeek('09:00','18:00','13:00'),
+                scheduledPto: r.scheduled_pto || [],
+                moveHistory: r.move_history || [],
+                editing: false
+            };
+        });
+    } else {
+        // First run — seed from initialAgents
+        agents = JSON.parse(JSON.stringify(initialAgents));
+        agents.forEach(function(a) { a.id=generateUUID(); a.scheduledPto=[]; a.moveHistory=[]; a.area=null; a.avatarPhoto=null; });
+        autoAssignAgentsToAreas();
+        await save();
+    }
+    // Load floor areas
+    var aRes = await sb.from('floor_areas').select('*').order('sort_order');
+    if (aRes.data && aRes.data.length > 0) {
+        floorAreas = aRes.data;
+    } else {
+        floorAreas = JSON.parse(JSON.stringify(defaultAreas));
+        for (var fi=0; fi<floorAreas.length; fi++) {
+            await sb.from('floor_areas').upsert({ id: floorAreas[fi].id, name: floorAreas[fi].name, color: floorAreas[fi].color, sort_order: fi });
+        }
+    }
+    // Load audit logs
+    var lRes = await sb.from('audit_logs').select('*').order('created_at', {ascending: false}).limit(500);
+    auditLogs = (lRes.data || []).map(function(r) {
+        return { type: r.type, message: r.message, agentName: r.agent_name, timestamp: r.created_at, display: new Date(r.created_at).toLocaleString() };
+    });
+    // Load open spots
+    var sRes = await sb.from('open_spots').select('*');
+    openSpots = (sRes.data || []).map(function(r) {
+        return { id: r.id, level: r.level, type: r.type, label: r.label };
+    });
+    // Load settings
+    var stRes = await sb.from('app_settings').select('*');
+    if (stRes.data) {
+        stRes.data.forEach(function(s) {
+            if (s.key === 'chart_flipped') isChartFlipped = s.value === 'true';
+        });
+    }
+    // Validate areas
+    var validAreaIds=floorAreas.map(function(a){return a.id;});
+    var hasUnassigned = agents.some(function(a){ return !a.area || validAreaIds.indexOf(a.area)===-1; });
+    if(hasUnassigned){ autoAssignAgentsToAreas(); await save(); }
+    maintenanceCheck();
+}
+
+function autoAssignAgentsToAreas() {
+    var validAreaIds=floorAreas.map(function(a){return a.id;});
+    // Find best area for each level by name matching
+    function findAreaForLevel(level) {
+        var nameMap={'Phone':'phone','ZOOM':'zoom','BKaaS / Zoom':'zoom','Lead':'main','T1':'main','ATS':'main'};
+        var keyword=(nameMap[level]||'main').toLowerCase();
+        for(var i=0;i<floorAreas.length;i++){
+            if(floorAreas[i].name.toLowerCase().indexOf(keyword)!==-1)return floorAreas[i].id;
+        }
+        // Fallback: assign to first area if any exist
+        return floorAreas.length>0?floorAreas[0].id:null;
+    }
+    agents.forEach(function(a) {
+        if(!a.area || validAreaIds.indexOf(a.area)===-1) {
+            a.area = findAreaForLevel(a.level);
+        }
+    });
+}
+
+function maintenanceCheck() {
+    var now = new Date(); var todayStr = now.toDateString();
+    var lastCheck = localStorage.getItem('dl_v3_last_maintenance'); // local cache for daily check
+    if (lastCheck !== todayStr) {
+        var nowT = now.getTime();
+        agents.forEach(function(a) {
+            if(a.sickUntil&&nowT>a.sickUntil){a.sickUntil=null;a.sickReason=null;}
+            if(a.ptoUntil&&nowT>a.ptoUntil){a.ptoUntil=null;a.ptoReason=null;}
+            if(a.scheduledPto){
+                a.scheduledPto.forEach(function(pto){
+                    var start=new Date(pto.startDate).getTime();
+                    var endD=new Date(pto.endDate);endD.setHours(23,59,59);var end=endD.getTime();
+                    if(nowT>=start&&nowT<=end&&!a.ptoUntil&&!a.sickUntil){
+                        if(pto.type==='sick'){a.sickUntil=end;a.sickReason=pto.reason;}
+                        else{a.ptoUntil=end;a.ptoReason=pto.reason;}
+                    }
+                });
+                a.scheduledPto=a.scheduledPto.filter(function(p){var eD=new Date(p.endDate);eD.setHours(23,59,59);return eD.getTime()>=nowT;});
+            }
+        });
+        localStorage.setItem('dl_v3_last_maintenance',todayStr);
+        save();
+    }
+}
+
+async function save() {
+    agents.sort(function(a,b){return a.name.localeCompare(b.name);});
+    // Upsert agents to Supabase
+    for (var i=0; i<agents.length; i++) {
+        var a = agents[i];
+        if (!a.id) a.id = generateUUID();
+        await sb.from('agents').upsert({
+            id: a.id, name: a.name, level: a.level, wfh: a.wfh || '-',
+            gender: a.gender || 'male', avatar_index: a.avatarIndex || 0,
+            avatar_photo: a.avatarPhoto || null,
+            sick_until: a.sickUntil || null, pto_until: a.ptoUntil || null,
+            sick_reason: a.sickReason || null, pto_reason: a.ptoReason || null,
+            area: a.area || null, full_week: a.fullWeek || false,
+            schedule: a.schedule, scheduled_pto: a.scheduledPto || [],
+            move_history: a.moveHistory || []
+        });
+    }
+    // Sync floor areas
+    for (var j=0; j<floorAreas.length; j++) {
+        await sb.from('floor_areas').upsert({
+            id: floorAreas[j].id, name: floorAreas[j].name,
+            color: floorAreas[j].color, sort_order: j
+        });
+    }
+    // Sync open spots — delete and reinsert
+    await sb.from('open_spots').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    for (var k=0; k<openSpots.length; k++) {
+        await sb.from('open_spots').insert({
+            level: openSpots[k].level, type: openSpots[k].type, label: openSpots[k].label || ''
+        });
+    }
+}
+
+async function addAuditLog(type,message,agentName) {
+    var entry = {type:type,message:message,agentName:agentName||'',timestamp:new Date().toISOString(),display:new Date().toLocaleString()};
+    auditLogs.unshift(entry);
+    if(auditLogs.length>500)auditLogs=auditLogs.slice(0,500);
+    await sb.from('audit_logs').insert({ type: type, message: message, agent_name: agentName||'', user_email: currentUser ? currentUser.email : '' });
+}
+
+function formatTime(t) {
+    if(!t||t==="23:59")return"--:--";
+    var p=t.split(':');var h=parseInt(p[0]);var m=parseInt(p[1]);
+    return(h%12||12)+':'+m.toString().padStart(2,'0')+' '+(h>=12?'PM':'AM');
+}
+
+function getStatus(agent) {
+    var now=new Date();var curDay=days[now.getDay()];var curM=now.getHours()*60+now.getMinutes();
+    var s=agent.schedule[curDay];
+    if(agent.sickUntil&&now.getTime()<agent.sickUntil)return{status:'SICK',css:'status-sick',badge:'badge-sick',reason:agent.sickReason};
+    if(agent.ptoUntil&&now.getTime()<agent.ptoUntil)return{status:'PTO',css:'status-pto',badge:'badge-pto',reason:agent.ptoReason};
+    if(s.isOff)return{status:'OFF',css:'status-off',badge:'badge-off'};
+    var sp=s.start.split(':');var startM=parseInt(sp[0])*60+parseInt(sp[1]);
+    var ep=s.end.split(':');var endM=parseInt(ep[0])*60+parseInt(ep[1]);
+    var lp=s.lunch.split(':');var lunchM=parseInt(lp[0])*60+parseInt(lp[1]);
+    if(curM>=lunchM&&curM<lunchM+60)return{status:'LUNCH',css:'status-lunch',badge:'badge-lunch'};
+    if(curM>=startM&&curM<endM)return{status:'ON FLOOR',css:'status-floor',badge:'badge-floor'};
+    return{status:'OFF',css:'status-off',badge:'badge-off'};
+}
+
+function switchView(view,el) {
+    document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
+    document.querySelectorAll('.view-panel').forEach(function(p){p.classList.remove('active');});
+    document.getElementById('view-'+view).classList.add('active');
+    el.classList.add('active');
+    var strip=document.getElementById('levelDropSidebar');
+    if(view==='floor'){renderFloorView();renderLevelDropSidebar();strip.classList.add('visible');}
+    else{strip.classList.remove('visible');}
+    if(view==='areas')renderAreasView();
+    if(view==='database')renderTable();
+}
+
+// ==================== DATABASE VIEW ====================
+function toggleTray(idx) {
+    var tray=document.getElementById('tray-'+idx);
+    var vis=tray.style.display==='block';
+    document.querySelectorAll('.action-tray').forEach(function(t){t.style.display='none';});
+    tray.style.display=vis?'none':'block';
+}
+
+function renderTable() {
+    var now=new Date();var curDay=days[now.getDay()];
+    var search=document.getElementById('searchName').value.toLowerCase();
+    var fLvl=document.getElementById('filterLevel').value;
+    var tbody=document.getElementById('tableBody');
+    var stats={vis:0,floor:0,lunch:0,out:0};
+    var html='';
+    agents.forEach(function(a,i) {
+        var st=getStatus(a);var s=a.schedule[curDay];
+        if((fLvl==="All"||a.level===fLvl)&&a.name.toLowerCase().includes(search)) {
+            stats.vis++;
+            if(st.status==="ON FLOOR")stats.floor++;
+            if(st.status==="LUNCH")stats.lunch++;
+            if(st.status==="SICK"||st.status==="PTO")stats.out++;
+            var avatarSrc=getAvatarSrc(a);
+            var reasonTag=st.reason?'<br><span style="font-size:10px;color:#8090b8;">'+st.reason+'</span>':'';
+            var editHtml=agents[i].editing?renderEditForm(i,curDay,a,s):'';
+            var ptoHtml='';
+            if(a.scheduledPto&&a.scheduledPto.length>0){
+                ptoHtml='<div style="margin-top:10px;padding:10px;background:#1a2352;border-radius:6px;"><strong style="font-size:11px;color:#8090b8;">SCHEDULED TIME OFF:</strong>';
+                a.scheduledPto.forEach(function(p,pi){
+                    var ts=p.type==='sick'?'background:rgba(255,68,68,0.2);color:var(--red)':'background:rgba(255,165,0,0.2);color:var(--orange)';
+                    ptoHtml+='<div class="pto-schedule-item"><div><span class="pto-type" style="'+ts+'">'+p.type.toUpperCase()+'</span> '+p.startDate+' to '+p.endDate+(p.reason?' - '+p.reason:'')+'</div><button onclick="event.stopPropagation();agents['+i+'].scheduledPto.splice('+pi+',1);save();renderTable();" style="background:transparent;color:var(--red);font-size:10px;">X</button></div>';
+                });
+                ptoHtml+='</div>';
+            }
+            html+='<tr onclick="toggleTray('+i+')">'+
+                '<td style="width:40px;padding:5px;"><img src="'+avatarSrc+'" style="width:38px;height:42px;border-radius:8px;object-fit:cover;border:2px solid #3d4f99;cursor:pointer;background:#e8eef5;" onclick="event.stopPropagation();openAvatarPicker('+i+')"></td>'+
+                '<td><strong>'+a.name+'</strong></td>'+
+                '<td class="mobile-hide">'+a.level+'</td>'+
+                '<td>'+formatTime(s.start)+' - '+formatTime(s.end)+'</td>'+
+                '<td style="'+(s.isOff?'color:var(--red)':'color:var(--orange)')+'">'+(s.isOff?'OFF':formatTime(s.lunch))+'</td>'+
+                '<td class="mobile-hide">'+(a.wfh||'-')+'</td>'+
+                '<td class="'+st.css+'">'+st.status+reasonTag+'</td>'+
+                '<td><button class="btn-expand">ACTIONS</button></td></tr>'+
+                '<tr><td colspan="8" style="padding:0;border:0;">'+
+                '<div class="action-tray" id="tray-'+i+'">'+
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">'+
+                '<div style="display:flex;align-items:center;gap:12px;">'+
+                '<img src="'+avatarSrc+'" style="width:55px;height:60px;border-radius:10px;object-fit:cover;border:2px solid #01CC74;background:#e8eef5;">'+
+                '<div><strong style="font-size:18px;color:#01CC74">'+a.name+'</strong><br><span style="color:#8090b8;">Level: '+a.level+'</span></div></div>'+
+                '<button onclick="event.stopPropagation();agents['+i+'].fullWeek=!agents['+i+'].fullWeek;save();renderTable();setTimeout(function(){toggleTray('+i+')},50);" style="color:#01CC74;background:rgba(1,204,116,0.1);border:1px solid #01CC74;">'+(agents[i].fullWeek?'EDIT TODAY':'EDIT WEEK')+'</button></div>'+
+                '<div style="display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap;">'+
+                '<button class="btn-sick" onclick="event.stopPropagation();openOooModal('+i+',\'sick\')">SICK</button>'+
+                '<button class="btn-pto" onclick="event.stopPropagation();openOooModal('+i+',\'pto\')">PTO / OOO</button>'+
+                '<button class="btn-promote" onclick="event.stopPropagation();openPromoteModal('+i+')">PROMOTE</button>'+
+                '<button onclick="event.stopPropagation();openAvatarPicker('+i+')" style="background:rgba(1,204,116,0.1);color:#01CC74;border:1px solid #01CC74;">AVATAR</button>'+
+                '<button onclick="event.stopPropagation();agents['+i+'].editing=true;save();renderTable();setTimeout(function(){toggleTray('+i+')},50);" style="background:rgba(1,204,116,0.1);color:#01CC74;border:1px solid #01CC74;">EDIT</button>'+
+                '<button class="btn-term" onclick="event.stopPropagation();openTerminateModal('+i+')">REMOVE</button></div>'+
+                editHtml+ptoHtml+'</div></td></tr>';
+        }
+    });
+    tbody.innerHTML=html;
+    document.getElementById('totalVisible').innerText=stats.vis;
+    document.getElementById('totalFloor').innerText=stats.floor;
+    document.getElementById('totalLunch').innerText=stats.lunch;
+    document.getElementById('totalOut').innerText=stats.out;
+}
+
+function renderEditForm(i,curDay,a,s) {
+    var ls='';levelOptions.forEach(function(o){ls+='<option'+(a.level===o?' selected':'')+'>'+o+'</option>';});
+    var gs='<option value="male"'+(a.gender==='male'?' selected':'')+'>Male</option><option value="female"'+(a.gender==='female'?' selected':'')+'>Female</option>';
+    var sh='';
+    if(agents[i].fullWeek){
+        sh='<div class="weekly-grid">';
+        days.forEach(function(d){
+            sh+='<div class="day-box"><strong>'+d.substring(0,3)+'</strong><br><button onclick="event.stopPropagation();agents['+i+'].schedule[\''+d+'\'].isOff=!agents['+i+'].schedule[\''+d+'\'].isOff;save();renderTable();setTimeout(function(){toggleTray('+i+')},50);" style="font-size:9px;margin:3px 0;">'+(agents[i].schedule[d].isOff?'OFF':'ON')+'</button><input type="time" id="s-'+i+'-'+d+'" value="'+agents[i].schedule[d].start+'"><input type="time" id="e-'+i+'-'+d+'" value="'+agents[i].schedule[d].end+'"><input type="time" id="l-'+i+'-'+d+'" value="'+agents[i].schedule[d].lunch+'"></div>';
+        });
+        sh+='</div>';
+    } else {
+        sh='<div style="display:flex;gap:10px;"><div><label>Start</label><input type="time" id="editS-'+i+'" value="'+s.start+'"></div><div><label>End</label><input type="time" id="editE-'+i+'" value="'+s.end+'"></div><div><label>Lunch</label><input type="time" id="editL-'+i+'" value="'+s.lunch+'"></div></div>';
+    }
+    return '<div style="background:#1a2352;padding:15px;border-radius:8px;"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:15px;"><div><label>Level</label><select id="editLevel-'+i+'">'+ls+'</select></div><div><label>WFH Days</label><input type="text" id="editWFH-'+i+'" value="'+a.wfh+'"></div><div><label>Gender</label><select id="editGender-'+i+'">'+gs+'</select></div></div>'+sh+'<button class="btn-save" onclick="event.stopPropagation();saveEdit('+i+')">SAVE CHANGES</button></div>';
+}
+
+async function saveEdit(idx) {
+    var curDay=days[new Date().getDay()];
+    agents[idx].wfh=document.getElementById('editWFH-'+idx).value;
+    agents[idx].level=document.getElementById('editLevel-'+idx).value;
+    agents[idx].gender=document.getElementById('editGender-'+idx).value;
+    if(agents[idx].fullWeek){days.forEach(function(d){agents[idx].schedule[d].start=document.getElementById('s-'+idx+'-'+d).value;agents[idx].schedule[d].end=document.getElementById('e-'+idx+'-'+d).value;agents[idx].schedule[d].lunch=document.getElementById('l-'+idx+'-'+d).value;});}
+    else{agents[idx].schedule[curDay].start=document.getElementById('editS-'+idx).value;agents[idx].schedule[curDay].end=document.getElementById('editE-'+idx).value;agents[idx].schedule[curDay].lunch=document.getElementById('editL-'+idx).value;}
+    agents[idx].editing=false;await save();renderTable();
+}
+
+async function addNewRep() {
+    var name=document.getElementById('newName').value;if(!name)return;
+    var level=document.getElementById('newLevel').value;
+    agents.push({id:generateUUID(),name:name,level:level,gender:document.getElementById('newGender').value,wfh:document.getElementById('newWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('newStart').value,document.getElementById('newEnd').value,document.getElementById('newLunch').value)});
+    await addAuditLog('add',name+' added to floor as '+level,name);
+    await save();document.getElementById('newName').value='';renderTable();
+}
+
+// ==================== FLOOR VIEW (ORG CHART) ====================
+function toggleFlipChart() {
+    isChartFlipped = !isChartFlipped;
+    localStorage.setItem(FLIP_STATE_KEY, isChartFlipped);
+    sb.from('app_settings').upsert({ key: 'chart_flipped', value: String(isChartFlipped) });
+    document.getElementById('btnFlipChart').textContent = isChartFlipped ? 'DEFAULT ORDER' : 'FLIP CHART';
+    renderFloorView();
+    renderLevelDropSidebar();
+}
+
+function renderLevelDropSidebar() {
+    var strip = document.getElementById('levelDropSidebar');
+    var displayOrder = isChartFlipped ? levelOrder.slice().reverse() : levelOrder;
+    var html = '<div class="level-drop-strip-label">DRAG A ROLE TO AN AGENT</div>';
+    html += '<div class="level-drop-grid">';
+    displayOrder.forEach(function(level) {
+        var boxColor = '#8090b8';
+        if(level === 'Lead') { boxColor = '#f9a825'; }
+        else if(level === 'BKaaS / Zoom') { boxColor = '#00695c'; }
+        else if(level === 'ZOOM') { boxColor = '#6a1b9a'; }
+        else if(level === 'ATS') { boxColor = '#0d47a1'; }
+        else if(level === 'Phone') { boxColor = '#1565c0'; }
+        else if(level === 'T1') { boxColor = '#2e7d32'; }
+        var count = agents.filter(function(a){ return a.level === level; }).length;
+        html += '<div class="level-drop-box" draggable="true" data-role-level="' + level + '" ondragstart="onRoleDragStart(event,\'' + level + '\')" ondragend="onRoleDragEnd(event)" style="border-color:' + boxColor + ';color:' + boxColor + ';">' + (levelLabels[level] || level) + '<span class="drop-box-count">' + count + '</span></div>';
+    });
+    html += '</div>';
+    strip.innerHTML = html;
+}
+
+function renderFloorView() {
+    var chart=document.getElementById('orgChart');
+    var statusFilter=document.getElementById('floorStatusFilter').value;
+    var searchFilter=document.getElementById('floorSearchName').value.toLowerCase();
+    var levelFilter=document.getElementById('floorLevelFilter').value;
+    var displayLevelOrder = isChartFlipped ? levelOrder.slice().reverse() : levelOrder;
+    document.getElementById('btnFlipChart').textContent = isChartFlipped ? 'DEFAULT ORDER' : 'FLIP CHART';
+    var html='';
+    displayLevelOrder.forEach(function(level,li) {
+        if(levelFilter!=='All'&&levelFilter!==level)return;
+        var levelAgents=agents.filter(function(a){
+            if(a.level!==level)return false;
+            if(searchFilter&&a.name.toLowerCase().indexOf(searchFilter)===-1)return false;
+            if(statusFilter==='all')return true;
+            var st=getStatus(a);
+            if(statusFilter==='floor')return st.status==='ON FLOOR'||st.status==='LUNCH';
+            if(statusFilter==='out')return st.status==='SICK'||st.status==='PTO'||st.status==='OFF';
+            return true;
+        });
+        var levelSpots=openSpots.filter(function(s){return s.level===level;});
+        if(li>0){html+='<div class="org-connector"></div>';}
+        html+='<div class="org-level">';
+        html+='<div class="org-level-header">'+(levelLabels[level]||level)+'</div>';
+        html+='<div class="org-level-cards" id="olane-'+level.replace(/[\s\/]/g,'_')+'" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDropLevel(event,\''+level+'\')">';
+
+        var curDay=days[new Date().getDay()];
+        levelAgents.forEach(function(a){
+            var idx=agents.indexOf(a);var st=getStatus(a);var avatarSrc=getAvatarSrc(a);
+            var reasonLine=st.reason?'<div style="font-size:8px;color:#90a4ae;margin-top:2px;">'+st.reason+'</div>':'';
+            // Role icon
+            var iconColor='#26a69a';var iconSvg='';
+            if(level==='Phone'){iconColor='#1565c0';iconSvg='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>';}
+            else if(level==='ZOOM'){iconColor='#6a1b9a';iconSvg='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>';}
+            else if(level==='BKaaS / Zoom'){iconColor='#00695c';iconSvg='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>';}
+            else if(level==='Lead'){iconColor='#f9a825';iconSvg='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';}
+            else{iconColor='#2e7d32';iconSvg='<svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8l8 5 8-5v10zm-8-7L4 6h16l-8 5z"/></svg>';}
+
+            var onFloorClass = st.status === 'ON FLOOR' ? ' on-floor' : '';
+            html+='<div class="org-card'+onFloorClass+'" draggable="true" data-agent-idx="'+idx+'" ondragstart="onDragStart(event,'+idx+')" ondragend="onDragEnd(event)" ondragover="onCardDragOver(event)" ondragleave="onCardDragLeave(event)" ondrop="onDropRoleOnAgent(event,'+idx+')">';
+            html+='<div class="card-icon" style="background:'+iconColor+';">'+iconSvg+'</div>';
+            html+='<div style="position:relative;display:inline-block;"><img src="'+avatarSrc+'" class="card-avatar" onclick="openAvatarPicker('+idx+')">';
+            html+='<button class="btn-change-avatar" onclick="event.stopPropagation();openAvatarPicker('+idx+')" title="Change Avatar">A</button></div>';
+            html+='<div class="card-name">'+a.name+'</div>';
+            html+='<div class="card-role">'+a.level+'</div>';
+            html+='<div style="text-align:center;"><span class="card-status '+st.badge+'">'+st.status+'</span></div>';
+            html+=reasonLine;
+            html+='<div class="card-actions">';
+            html+='<button style="background:rgba(255,68,68,0.8);" onclick="event.stopPropagation();openOooModal('+idx+',\'sick\')">SICK</button>';
+            html+='<button style="background:rgba(255,165,0,0.8);" onclick="event.stopPropagation();openOooModal('+idx+',\'pto\')">PTO</button>';
+            html+='<button style="background:rgba(255,73,152,0.8);" onclick="event.stopPropagation();openMoveModal('+idx+')">MOVE</button>';
+            html+='</div></div>';
+        });
+
+        // Open/Floating spots
+        levelSpots.forEach(function(spot,si) {
+            var globalIdx=openSpots.indexOf(spot);
+            html+='<div class="org-card open-spot">';
+            html+='<div class="open-silhouette"><img src="'+getSilhouetteSvg()+'" style="width:70px;height:70px;border-radius:50%;opacity:0.5;"></div>';
+            html+='<div class="card-name">'+(spot.type==='floating'?'FLOATING':'OPEN')+'</div>';
+            html+='<div class="card-role">'+(spot.label||('('+spot.type.charAt(0).toUpperCase()+spot.type.slice(1)+' Spot)'))+'</div>';
+            html+='<div class="card-actions"><button style="background:rgba(255,68,68,0.6);color:#fff;" onclick="removeSpot('+globalIdx+')">REMOVE</button></div>';
+            html+='</div>';
+        });
+
+        // Add spot button
+        html+='<div style="display:flex;align-items:center;justify-content:center;min-width:100px;"><button class="add-spot-btn" onclick="openSpotModal(\''+level+'\')">+ ADD SPOT</button></div>';
+        html+='</div></div>';
+    });
+    chart.innerHTML=html;
+}
+
+// ==================== FLOOR AREAS ====================
+function renderAreasView() {
+    var container=document.getElementById('floorAreasContainer');
+    var unassigned=document.getElementById('unassignedAgents');
+    var html='';
+    floorAreas.forEach(function(area,ai) {
+        var areaAgents=agents.filter(function(a){return a.area===area.id;});
+        var chipsHtml='';
+        areaAgents.forEach(function(a){
+            var idx=agents.indexOf(a);var st=getStatus(a);
+            chipsHtml+='<div class="area-avatar-chip" draggable="true" data-agent-idx="'+idx+'" ondragstart="onDragStart(event,'+idx+')" ondragend="onDragEnd(event)"><img src="'+getAvatarSrc(a)+'"><span>'+a.name+'</span><span class="card-status '+st.badge+'" style="font-size:9px;padding:2px 5px;">'+st.status+'</span></div>';
+        });
+        html+='<div class="floor-area" style="border-color:'+area.color+'40;"><div class="floor-area-header"><h3 style="color:'+area.color+';">'+area.name+' <span style="color:#8090b8;font-size:12px;">('+areaAgents.length+')</span></h3><div style="display:flex;gap:5px;"><button onclick="renameArea('+ai+')" style="background:transparent;color:#8090b8;font-size:10px;">RENAME</button><button onclick="removeArea('+ai+')" style="background:transparent;color:var(--red);font-size:10px;">X</button></div></div><div class="floor-area-body" id="area-'+area.id+'" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDropArea(event,\''+area.id+'\')">'+(chipsHtml||'<div style="color:#8090b8;font-size:11px;padding:10px;">Drop agents here</div>')+'</div></div>';
+    });
+    container.innerHTML=html;
+    var validAreaIds=floorAreas.map(function(a){return a.id;});
+    var ua=agents.filter(function(a){return !a.area||validAreaIds.indexOf(a.area)===-1;});
+    var uh='';
+    ua.forEach(function(a){var idx=agents.indexOf(a);var st=getStatus(a);uh+='<div class="area-avatar-chip" draggable="true" data-agent-idx="'+idx+'" ondragstart="onDragStart(event,'+idx+')" ondragend="onDragEnd(event)"><img src="'+getAvatarSrc(a)+'"><span>'+a.name+'</span><span class="card-status '+st.badge+'" style="font-size:9px;padding:2px 5px;">'+st.status+'</span></div>';});
+    unassigned.innerHTML=uh||'<div style="color:#8090b8;font-size:11px;">All agents assigned</div>';
+    unassigned.ondragover=onDragOver;unassigned.ondragleave=onDragLeave;unassigned.ondrop=function(e){onDropArea(e,null);};
+}
+
+async function addNewArea(){var n=prompt('Enter area name:');if(!n)return;var c=['#01CC74','#FF4998','#1665D8','#FFA500','#4B9FFF','#FFD700','#01e680','#3d4f99'];floorAreas.push({id:'area-'+Date.now(),name:n,color:c[floorAreas.length%c.length]});await save();renderAreasView();}
+async function renameArea(ai){var n=prompt('New area name:',floorAreas[ai].name);if(n){floorAreas[ai].name=n;await save();renderAreasView();}}
+async function removeArea(ai){if(!confirm('Remove "'+floorAreas[ai].name+'"?'))return;var id=floorAreas[ai].id;agents.forEach(function(a){if(a.area===id)a.area=null;});await sb.from('floor_areas').delete().eq('id',id);floorAreas.splice(ai,1);await save();renderAreasView();}
+
+// ==================== OPEN/FLOATING SPOTS ====================
+function openSpotModal(level) {
+    pendingSpotLevel=level;
+    document.getElementById('spotModalInfo').textContent='Adding spot to '+(levelLabels[level]||level);
+    document.getElementById('spotType').value='open';
+    document.getElementById('spotLabel').value='';
+    document.getElementById('spotModal').classList.add('show');
+}
+
+async function saveSpot() {
+    var type=document.getElementById('spotType').value;
+    var label=document.getElementById('spotLabel').value;
+    openSpots.push({level:pendingSpotLevel,type:type,label:label||'',id:'spot-'+Date.now()});
+    await addAuditLog('add',type.toUpperCase()+' spot added to '+(levelLabels[pendingSpotLevel]||pendingSpotLevel)+(label?' ('+label+')':''),'');
+    await save();closeModal('spotModal');renderFloorView();
+}
+
+async function removeSpot(idx) {
+    if(!confirm('Remove this spot?'))return;
+    var s=openSpots[idx];
+    await addAuditLog('terminate','Spot removed from '+(levelLabels[s.level]||s.level)+': '+s.type.toUpperCase()+(s.label?' ('+s.label+')':''),'');
+    openSpots.splice(idx,1);await save();renderFloorView();
+}
+
+// ==================== DRAG & DROP ====================
+var dragAgentIdx=-1;
+var dragRoleLevel=null;
+function onDragStart(e,idx){dragAgentIdx=idx;dragRoleLevel=null;e.dataTransfer.setData('text/plain',idx.toString());e.dataTransfer.setData('dragType','agent');var c=e.target.closest('.org-card')||e.target.closest('.area-avatar-chip');if(c)c.classList.add('dragging');}
+function onDragEnd(e){dragRoleLevel=null;document.querySelectorAll('.dragging').forEach(function(el){el.classList.remove('dragging');});document.querySelectorAll('.drag-over').forEach(function(el){el.classList.remove('drag-over');});document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});}
+function onRoleDragStart(e,level){dragRoleLevel=level;dragAgentIdx=-1;e.dataTransfer.setData('text/plain',level);e.dataTransfer.setData('dragType','role');e.target.classList.add('dragging');}
+function onRoleDragEnd(e){dragRoleLevel=null;e.target.classList.remove('dragging');document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});}
+function onCardDragOver(e){e.preventDefault();if(dragRoleLevel){e.currentTarget.classList.add('role-drag-over');}else{e.currentTarget.classList.add('drag-over');}}
+function onCardDragLeave(e){e.currentTarget.classList.remove('role-drag-over');e.currentTarget.classList.remove('drag-over');}
+async function onDropRoleOnAgent(e,agentIdx){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('role-drag-over');if(!dragRoleLevel)return;var oldLevel=agents[agentIdx].level;if(oldLevel!==dragRoleLevel){agents[agentIdx].level=dragRoleLevel;agents[agentIdx].moveHistory.push({from:oldLevel,to:dragRoleLevel,type:'level_change',date:new Date().toISOString()});await addAuditLog('move',agents[agentIdx].name+' moved from '+oldLevel+' to '+dragRoleLevel,agents[agentIdx].name);await save();}dragRoleLevel=null;renderFloorView();renderLevelDropSidebar();}
+function onDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
+function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
+
+async function onDropLevel(e,newLevel) {
+    e.preventDefault();e.currentTarget.classList.remove('drag-over');
+    if(dragRoleLevel){dragRoleLevel=null;return;}
+    var idx=parseInt(e.dataTransfer.getData('text/plain'));if(isNaN(idx)||idx<0)return;
+    var oldLevel=agents[idx].level;
+    if(oldLevel!==newLevel){agents[idx].level=newLevel;agents[idx].moveHistory.push({from:oldLevel,to:newLevel,type:'level_change',date:new Date().toISOString()});await addAuditLog('move',agents[idx].name+' moved from '+oldLevel+' to '+newLevel,agents[idx].name);await save();}
+    renderFloorView();renderLevelDropSidebar();
+}
+
+async function onDropArea(e,areaId) {
+    e.preventDefault();e.currentTarget.classList.remove('drag-over');
+    var idx=parseInt(e.dataTransfer.getData('text/plain'));if(isNaN(idx)||idx<0)return;
+    var oldArea=agents[idx].area;
+    var oldName='Unassigned';var newName='Unassigned';
+    if(oldArea){var f=floorAreas.find(function(a){return a.id===oldArea;});if(f)oldName=f.name;}
+    if(areaId){var f=floorAreas.find(function(a){return a.id===areaId;});if(f)newName=f.name;}
+    if(oldArea!==areaId){agents[idx].area=areaId;agents[idx].moveHistory.push({from:oldName,to:newName,type:'area_change',date:new Date().toISOString()});await addAuditLog('area',agents[idx].name+' moved from "'+oldName+'" to "'+newName+'"',agents[idx].name);await save();}
+    renderAreasView();
+}
+
+// ==================== AVATAR PICKER ====================
+function openAvatarPicker(idx) {
+    currentModalAgent=idx;var a=agents[idx];selectedAvatarGender=a.gender||'male';selectedAvatarIndex=a.avatarIndex||0;pendingPhotoData=null;
+    document.getElementById('avatarModalName').textContent='Editing avatar for '+a.name;
+    document.getElementById('photoPreview').style.display='none';
+    document.getElementById('photoUpload').value='';
+    var tabs=document.querySelectorAll('#genderTabs .gender-tab');
+    tabs.forEach(function(t){t.classList.remove('active');});
+    tabs.forEach(function(t){if(t.getAttribute('data-gender')===selectedAvatarGender)t.classList.add('active');});
+    renderAvatarGrid();document.getElementById('avatarModal').classList.add('show');
+}
+
+function switchAvatarGender(gender,el) {
+    selectedAvatarGender=gender;
+    document.querySelectorAll('#genderTabs .gender-tab').forEach(function(t){t.classList.remove('active');});
+    el.classList.add('active');renderAvatarGrid();
+}
+
+function renderAvatarGrid() {
+    var grid=document.getElementById('avatarGrid');var html='';
+    var cfgs=avatarConfigs[selectedAvatarGender==='female'?'female':'male'];
+    cfgs.forEach(function(cfg,i){
+        var svg=makeAvatar(selectedAvatarGender==='female'?'female':'male',i,cfg.skin,cfg.hair,cfg.shirt,cfg.acc);
+        var src='data:image/svg+xml;base64,'+btoa(svg);
+        html+='<div style="text-align:center;"><img src="'+src+'" class="avatar-option'+(i===selectedAvatarIndex?' selected':'')+'" onclick="selectAvatar('+i+')"></div>';
+    });
+    grid.innerHTML=html;
+}
+
+function selectAvatar(idx){selectedAvatarIndex=idx;pendingPhotoData=null;document.getElementById('photoPreview').style.display='none';document.querySelectorAll('.avatar-option').forEach(function(o){o.classList.remove('selected');});var opts=document.querySelectorAll('.avatar-option');if(opts[idx])opts[idx].classList.add('selected');}
+
+function handlePhotoUpload(event) {
+    var file = event.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        pendingPhotoData = e.target.result;
+        document.getElementById('photoPreviewImg').src = pendingPhotoData;
+        document.getElementById('photoPreview').style.display = 'block';
+        document.querySelectorAll('.avatar-option').forEach(function(o) { o.classList.remove('selected'); });
+    };
+    reader.readAsDataURL(file);
+}
+
+async function saveAvatar(){if(currentModalAgent<0)return;agents[currentModalAgent].gender=selectedAvatarGender;agents[currentModalAgent].avatarIndex=selectedAvatarIndex;agents[currentModalAgent].avatarPhoto=pendingPhotoData||null;await save();closeModal('avatarModal');renderAll();}
+
+// ==================== OOO MODAL ====================
+function openOooModal(idx,type){currentModalAgent=idx;var a=agents[idx];document.getElementById('oooModalTitle').textContent=type==='sick'?'MARK SICK':'MARK PTO / OUT OF OFFICE';document.getElementById('oooModalName').textContent=a.name+' - '+a.level;document.getElementById('oooType').value=type;var today=new Date().toISOString().split('T')[0];document.getElementById('oooStart').value=today;document.getElementById('oooEnd').value=today;document.getElementById('oooReason').value='';renderScheduledPto(idx);document.getElementById('oooModal').classList.add('show');}
+
+function renderScheduledPto(idx){var list=document.getElementById('scheduledPtoList');var a=agents[idx];if(!a.scheduledPto||a.scheduledPto.length===0){list.innerHTML='<div style="color:#8090b8;font-size:11px;padding:5px;">No scheduled time off</div>';return;}var h='';a.scheduledPto.forEach(function(p,pi){var ts=p.type==='sick'?'background:rgba(255,68,68,0.2);color:var(--red)':'background:rgba(255,165,0,0.2);color:var(--orange)';h+='<div class="pto-schedule-item"><div><span class="pto-type" style="'+ts+'">'+p.type.toUpperCase()+'</span> <span style="margin-left:8px;">'+p.startDate+' to '+p.endDate+'</span>'+(p.reason?'<br><span style="color:#8090b8;font-size:11px;">'+p.reason+'</span>':'')+'</div><button onclick="event.stopPropagation();agents['+idx+'].scheduledPto.splice('+pi+',1);save();renderScheduledPto('+idx+');" style="background:transparent;color:var(--red);font-size:14px;padding:2px 6px;">X</button></div>';});list.innerHTML=h;}
+
+async function saveOoo(){if(currentModalAgent<0)return;var type=document.getElementById('oooType').value;var startDate=document.getElementById('oooStart').value;var endDate=document.getElementById('oooEnd').value;var reason=document.getElementById('oooReason').value;if(!startDate||!endDate){alert('Please select dates.');return;}var now=new Date();var endD=new Date(endDate+'T23:59:59');var todayStr=now.toISOString().split('T')[0];if(startDate<=todayStr){if(type==='sick'){agents[currentModalAgent].sickUntil=endD.getTime();agents[currentModalAgent].sickReason=reason||null;agents[currentModalAgent].ptoUntil=null;}else{agents[currentModalAgent].ptoUntil=endD.getTime();agents[currentModalAgent].ptoReason=reason||null;agents[currentModalAgent].sickUntil=null;}await addAuditLog(type,agents[currentModalAgent].name+' marked '+type.toUpperCase()+' from '+startDate+' to '+endDate+(reason?' - Reason: '+reason:''),agents[currentModalAgent].name);}agents[currentModalAgent].scheduledPto.push({type:type,startDate:startDate,endDate:endDate,reason:reason,createdAt:new Date().toISOString()});await save();closeModal('oooModal');renderAll();}
+
+// ==================== MOVE / PROMOTE / TERMINATE ====================
+function openMoveModal(idx){currentModalAgent=idx;var a=agents[idx];document.getElementById('moveModalName').textContent=a.name;document.getElementById('moveModalCurrent').textContent='Currently: '+a.level;document.getElementById('moveModal').classList.add('show');}
+function openPromotionLogModal(idx){currentModalAgent=idx;var a=agents[idx];document.getElementById('promoteModalName').textContent=a.name;document.getElementById('promoteCurrentLevel').value=a.level;var ci=levelOrder.indexOf(a.level);var nl=ci>0?levelOrder[ci-1]:a.level;document.getElementById('promoteNewLevel').value=nl;document.getElementById('promoteModal').classList.add('show');}
+function openPromoteModal(idx){currentModalAgent=idx;var a=agents[idx];document.getElementById('promoteModalName').textContent=a.name;document.getElementById('promoteCurrentLevel').value=a.level;document.getElementById('promoteNewLevel').value=a.level;document.getElementById('promoteModal').classList.add('show');}
+
+async function confirmPromotion(){if(currentModalAgent<0)return;var oldLevel=agents[currentModalAgent].level;var newLevel=document.getElementById('promoteNewLevel').value;if(oldLevel===newLevel){alert('Please select a different level.');return;}var name=agents[currentModalAgent].name;agents[currentModalAgent].level=newLevel;agents[currentModalAgent].moveHistory.push({from:oldLevel,to:newLevel,type:'promotion',date:new Date().toISOString()});await addAuditLog('promote',name+' promoted from '+oldLevel+' to '+newLevel,name);await save();closeModal('promoteModal');if(confirm(name+' has been promoted to '+newLevel+'.\n\nWould you like to add someone to fill the '+oldLevel+' position?')){document.getElementById('replacementInfo').textContent='Filling '+oldLevel+' position (previously held by '+name+')';document.getElementById('repLevel').value=oldLevel;document.getElementById('replacementModal').classList.add('show');}renderAll();}
+
+function openTerminateModal(idx){currentModalAgent=idx;var a=agents[idx];document.getElementById('terminateModalName').textContent=a.name+' - '+a.level;document.getElementById('terminateReason').value='terminated';document.getElementById('terminateNotes').value='';document.getElementById('terminateReplacement').value='later';document.getElementById('terminateModal').classList.add('show');}
+
+async function confirmTermination(){if(currentModalAgent<0)return;var a=agents[currentModalAgent];var reason=document.getElementById('terminateReason').value;var notes=document.getElementById('terminateNotes').value;var wantsRep=document.getElementById('terminateReplacement').value==='now';var oldLevel=a.level;var oldName=a.name;var agentId=a.id;await addAuditLog('terminate',oldName+' removed ('+oldLevel+'). Reason: '+reason+(notes?'. Notes: '+notes:''),oldName);agents.splice(currentModalAgent,1);if(agentId){await sb.from('agents').delete().eq('id',agentId);}await save();closeModal('terminateModal');if(wantsRep){document.getElementById('replacementInfo').textContent='Filling '+oldLevel+' position (previously held by '+oldName+')';document.getElementById('repLevel').value=oldLevel;document.getElementById('replacementModal').classList.add('show');}renderAll();}
+
+async function addReplacement(){var name=document.getElementById('repName').value;if(!name){alert('Please enter a name.');return;}var level=document.getElementById('repLevel').value;agents.push({id:generateUUID(),name:name,level:level,gender:document.getElementById('repGender').value,wfh:document.getElementById('repWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('repStart').value,document.getElementById('repEnd').value,document.getElementById('repLunch').value)});await addAuditLog('add',name+' added as replacement ('+level+')',name);await save();document.getElementById('repName').value='';document.getElementById('repWFH').value='';closeModal('replacementModal');renderAll();}
+
+// ==================== AUDIT ====================
+function showAuditModal(){document.getElementById('auditSearch').value='';document.getElementById('auditFilter').value='all';renderAuditLogs();document.getElementById('auditModal').classList.add('show');}
+function renderAuditLogs(){var search=document.getElementById('auditSearch').value.toLowerCase();var filter=document.getElementById('auditFilter').value;var content=document.getElementById('auditContent');var filtered=auditLogs.filter(function(log){if(filter!=='all'&&log.type!==filter)return false;if(search&&log.message.toLowerCase().indexOf(search)===-1&&(log.agentName||'').toLowerCase().indexOf(search)===-1)return false;return true;});if(filtered.length===0){content.innerHTML='<div style="color:#8090b8;text-align:center;padding:30px;">No audit logs found.</div>';return;}var h='';filtered.slice(0,100).forEach(function(log){h+='<div class="audit-entry audit-'+log.type+'"><div class="audit-time">'+(log.display||new Date(log.timestamp).toLocaleString())+'</div><div class="audit-action">'+log.message+'</div></div>';});content.innerHTML=h;}
+
+// ==================== GLOBAL ====================
+function closeModal(id){document.getElementById(id).classList.remove('show');currentModalAgent=-1;pendingPhotoData=null;}
+document.querySelectorAll('.modal-overlay').forEach(function(o){o.addEventListener('click',function(e){if(e.target===this)closeModal(this.id);});});
+function renderAll(){renderTable();if(document.getElementById('view-floor').classList.contains('active')){renderFloorView();renderLevelDropSidebar();}if(document.getElementById('view-areas').classList.contains('active'))renderAreasView();}
+function exportData(){var d={agents:agents,floorAreas:floorAreas,auditLogs:auditLogs,openSpots:openSpots,version:3};navigator.clipboard.writeText(JSON.stringify(d)).then(function(){alert("Copied.");});}
+async function importData(){var d=prompt("Paste exported data:");if(!d)return;try{var p=JSON.parse(d);if(p.version>=2){agents=p.agents||[];floorAreas=p.floorAreas||[];auditLogs=p.auditLogs||[];openSpots=p.openSpots||[];}else{agents=p;}agents.forEach(function(a){if(!a.id)a.id=generateUUID();if(!a.scheduledPto)a.scheduledPto=[];if(!a.moveHistory)a.moveHistory=[];if(!a.area)a.area=null;if(!a.gender)a.gender='male';if(a.avatarIndex===undefined)a.avatarIndex=0;if(!a.avatarPhoto)a.avatarPhoto=null;});await save();renderAll();alert("Imported.");}catch(e){alert("Invalid data.");}}
+
+function updateClock(){if(!currentUser)return;var t=new Date().toLocaleTimeString();document.getElementById('clock').innerText=t;document.getElementById('navClock').innerText=t;if(new Date().getSeconds()===0){maintenanceCheck();renderAll();}}
+
+// ==================== BOOT ====================
+(async function boot() {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        document.getElementById('loginMessage').className = 'login-message error';
+        document.getElementById('loginMessage').textContent = 'Supabase not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY in the script.';
+        return;
+    }
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // Check for existing session
+    var { data: session } = await sb.auth.getSession();
+    if (session && session.session) {
+        currentUser = session.session.user;
+        await startApp();
+    }
+    // Otherwise login screen is already visible
+})();
+</script>
+</body>
+</html>

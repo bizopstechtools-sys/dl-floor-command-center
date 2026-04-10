@@ -1,0 +1,17 @@
+{
+  "name": "dl-floor-command-center",
+  "version": "2.0.0",
+  "description": "DoorLoop Floor Command Center - Real-time floor management dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
