@@ -594,6 +594,9 @@ async function startApp() {
     setupRealtime();
     setInterval(updateClock, 1000);
     updateClock();
+    // Lazy-load avatar photos in the background. First paint already happened;
+    // photos stream in and re-render when ready. Fire-and-forget on purpose.
+    hydrateAvatarPhotos();
 }
 function setupRealtime() {
     sb.channel('floor-sync')
@@ -631,8 +634,16 @@ function reloadQuiet() {
             var trayIdx = parseInt(openTray.id.replace('tray-',''),10);
             if (!isNaN(trayIdx) && agents[trayIdx]) openTrayId = agents[trayIdx].id;
         }
+        // Snapshot photo data BEFORE initData wipes it (initData no longer
+        // fetches avatar_photo in the main SELECT, so we'd lose photos
+        // across a realtime reload unless we re-apply them here).
+        var photoById = {};
+        agents.forEach(function(a){ if(a && a.avatarPhoto) photoById[a.id] = a.avatarPhoto; });
         await initData();
-        agents.forEach(function(a){ if(a && editingIds[a.id]) a.editing = true; });
+        agents.forEach(function(a){
+            if (a && editingIds[a.id]) a.editing = true;
+            if (a && photoById[a.id] && !a.avatarPhoto) a.avatarPhoto = photoById[a.id];
+        });
         renderAll();
         if (openTrayId) {
             for (var i=0; i<agents.length; i++) {
@@ -938,8 +949,18 @@ async function initData() {
     // PARALLEL FETCH: all five datasets in one round-trip instead of five
     // sequential ones. Cuts first-paint latency roughly 5x when network is
     // the bottleneck.
+    //
+    // CRITICAL: do NOT pull avatar_photo in this SELECT. Photos are stored
+    // as base64 strings directly in the row and can be hundreds of KB each.
+    // With 24 agents the full-row SELECT was shipping ~22 MB per load, which
+    // took 12+ seconds and caused the JWT to expire mid-flight, which then
+    // produced a cascading 500 + 400 token-refresh failure and the
+    // "could not load" alert (2026-04-10 incident, part 2).
+    // Photos are lazy-loaded in hydrateAvatarPhotos() right after the
+    // first paint.
+    var AGENT_COLS_NO_PHOTO = 'id,name,level,wfh,gender,avatar_index,sick_until,pto_until,sick_reason,pto_reason,area,full_week,schedule,scheduled_pto,move_history';
     var results = await Promise.all([
-        sb.from('agents').select('*').order('name'),
+        sb.from('agents').select(AGENT_COLS_NO_PHOTO).order('name'),
         sb.from('floor_areas').select('*').order('sort_order'),
         sb.from('audit_logs').select('*').order('created_at', {ascending: false}).limit(500),
         sb.from('open_spots').select('*'),
@@ -1024,6 +1045,39 @@ async function initData() {
     maintenanceCheck();
     // Refresh the local cache so next load paints instantly.
     saveLocalCache();
+}
+
+// Lazy-load avatar photos AFTER the first paint. Photos are big base64 blobs
+// and pulling them inline made the agents SELECT take 12+ seconds. Here we
+// fetch only (id, avatar_photo) for rows that actually have a photo, then
+// merge the blobs back into the in-memory agents array and re-render.
+// This runs asynchronously — it never blocks the first paint.
+async function hydrateAvatarPhotos() {
+    try {
+        var pRes = await sb.from('agents')
+            .select('id,avatar_photo')
+            .not('avatar_photo', 'is', null);
+        if (pRes.error) {
+            console.warn('hydrateAvatarPhotos: fetch failed, avatars will stay illustrated', pRes.error);
+            return;
+        }
+        if (!pRes.data || pRes.data.length === 0) return;
+        var photosById = {};
+        pRes.data.forEach(function(r) { photosById[r.id] = r.avatar_photo; });
+        var changed = false;
+        for (var i = 0; i < agents.length; i++) {
+            if (photosById[agents[i].id] && agents[i].avatarPhoto !== photosById[agents[i].id]) {
+                agents[i].avatarPhoto = photosById[agents[i].id];
+                changed = true;
+            }
+        }
+        if (changed) {
+            renderAll();
+            saveLocalCache();
+        }
+    } catch(e) {
+        console.warn('hydrateAvatarPhotos threw, avatars will stay illustrated', e);
+    }
 }
 
 function autoAssignAgentsToAreas() {
