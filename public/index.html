@@ -564,6 +564,12 @@ async function handleSignUp() {
 async function handleLogout() {
     await sb.auth.signOut();
     currentUser = null;
+    // Clear the local cache so the next sign-in shows live data, not whatever
+    // this user was last looking at.
+    try {
+        localStorage.removeItem(CACHE_KEY_AGENTS);
+        localStorage.removeItem(CACHE_KEY_AREAS);
+    } catch(e) {}
     document.getElementById('appContainer').style.display = 'none';
     document.getElementById('loginScreen').style.display = 'flex';
 }
@@ -576,6 +582,13 @@ async function startApp() {
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('appContainer').style.display = 'block';
     document.getElementById('userEmail').textContent = currentUser.email;
+    // OPTIMISTIC FIRST PAINT: if we have a local cache from last session,
+    // render it immediately so the user sees their floor in <100ms instead
+    // of waiting on the network. initData() then fetches fresh data in
+    // parallel and re-renders. Stale cache self-corrects in under a second.
+    if (loadLocalCache()) {
+        renderAll();
+    }
     await initData();
     renderAll();
     setupRealtime();
@@ -879,6 +892,36 @@ var defaultAreas = [
 // Legacy area IDs from older seed — used to auto-migrate old databases.
 var LEGACY_AREA_IDS = ['area-main','area-phones','area-zoom','area-training'];
 
+// Local cache keys — used so the first paint is instant instead of waiting
+// on five network round-trips. Cache is opportunistic: we always refresh
+// from Supabase in parallel and re-render, so stale cache is corrected in
+// under a second. Cache is cleared on logout.
+var CACHE_KEY_AGENTS = 'dl_v3_cache_agents';
+var CACHE_KEY_AREAS  = 'dl_v3_cache_areas';
+
+function loadLocalCache() {
+    try {
+        var ca = localStorage.getItem(CACHE_KEY_AGENTS);
+        var cf = localStorage.getItem(CACHE_KEY_AREAS);
+        if (ca && cf) {
+            var pa = JSON.parse(ca);
+            var pf = JSON.parse(cf);
+            if (Array.isArray(pa) && pa.length > 0 && Array.isArray(pf) && pf.length > 0) {
+                agents = pa;
+                floorAreas = pf;
+                return true;
+            }
+        }
+    } catch(e) { console.warn('loadLocalCache failed:', e); }
+    return false;
+}
+function saveLocalCache() {
+    try {
+        localStorage.setItem(CACHE_KEY_AGENTS, JSON.stringify(agents));
+        localStorage.setItem(CACHE_KEY_AREAS,  JSON.stringify(floorAreas));
+    } catch(e) { console.warn('saveLocalCache failed:', e); }
+}
+
 async function initData() {
     // HARD GATE: never run any queries until we have a confirmed authenticated
     // Supabase session. Without this, a race between handleSignIn() resolving
@@ -892,12 +935,19 @@ async function initData() {
         alert('Your session has expired. Please sign in again.');
         return;
     }
-    // Load agents from Supabase.
-    // CRITICAL: this SELECT must succeed and return data. The seed-on-empty
-    // branch was REMOVED — this DB is past first-run and must never reseed.
-    // If we get 0 rows, the correct action is to loudly fail so a human can
-    // investigate, not to silently repopulate with fresh UUIDs.
-    var res = await sb.from('agents').select('*').order('name');
+    // PARALLEL FETCH: all five datasets in one round-trip instead of five
+    // sequential ones. Cuts first-paint latency roughly 5x when network is
+    // the bottleneck.
+    var results = await Promise.all([
+        sb.from('agents').select('*').order('name'),
+        sb.from('floor_areas').select('*').order('sort_order'),
+        sb.from('audit_logs').select('*').order('created_at', {ascending: false}).limit(500),
+        sb.from('open_spots').select('*'),
+        sb.from('app_settings').select('*')
+    ]);
+    var res = results[0], aRes = results[1], lRes = results[2], sRes = results[3], stRes = results[4];
+
+    // Agents — primary dataset, must succeed.
     if (res.error) {
         console.error('initData: agents fetch failed, aborting load to avoid reseed', res.error);
         alert('Could not load agents from the database. Please refresh. (Details in console.)');
@@ -927,57 +977,53 @@ async function initData() {
         alert('Database is empty or unreachable. Seed path is disabled. Please contact support.');
         return;
     }
-    // Load floor areas
-    var aRes = await sb.from('floor_areas').select('*').order('sort_order');
+
+    // Floor areas — with legacy migration (non-blocking per-area upserts via async helper).
     if (aRes.data && aRes.data.length > 0) {
         floorAreas = aRes.data;
-        // Auto-migrate old seeded defaults (Main Floor / Phone Bay / Zoom Room / Training Area)
-        // to the new per-level defaults so the Who-is-Where view matches the level ladder.
         var allLegacy = floorAreas.length > 0 && floorAreas.every(function(a){
             return LEGACY_AREA_IDS.indexOf(a.id) !== -1;
         });
         if (allLegacy) {
-            // Delete the old rows, then insert the new ones.
             for (var dli=0; dli<floorAreas.length; dli++) {
-                await sb.from('floor_areas').delete().eq('id', floorAreas[dli].id);
+                sb.from('floor_areas').delete().eq('id', floorAreas[dli].id);
             }
-            // Unlink any agents that still point at the legacy areas so they get re-assigned.
             for (var uli=0; uli<agents.length; uli++) {
                 if (LEGACY_AREA_IDS.indexOf(agents[uli].area) !== -1) agents[uli].area = null;
             }
             floorAreas = JSON.parse(JSON.stringify(defaultAreas));
-            for (var nfi=0; nfi<floorAreas.length; nfi++) {
-                await sb.from('floor_areas').upsert({ id: floorAreas[nfi].id, name: floorAreas[nfi].name, color: floorAreas[nfi].color, sort_order: nfi });
-            }
+            saveFloorAreasAsync();
         }
     } else {
         floorAreas = JSON.parse(JSON.stringify(defaultAreas));
-        for (var fi=0; fi<floorAreas.length; fi++) {
-            await sb.from('floor_areas').upsert({ id: floorAreas[fi].id, name: floorAreas[fi].name, color: floorAreas[fi].color, sort_order: fi });
-        }
+        saveFloorAreasAsync();
     }
-    // Load audit logs
-    var lRes = await sb.from('audit_logs').select('*').order('created_at', {ascending: false}).limit(500);
-    auditLogs = (lRes.data || []).map(function(r) {
+
+    // Audit logs.
+    auditLogs = (lRes && lRes.data ? lRes.data : []).map(function(r) {
         return { type: r.type, message: r.message, agentName: r.agent_name, timestamp: r.created_at, display: new Date(r.created_at).toLocaleString() };
     });
-    // Load open spots
-    var sRes = await sb.from('open_spots').select('*');
-    openSpots = (sRes.data || []).map(function(r) {
+    // Open spots.
+    openSpots = (sRes && sRes.data ? sRes.data : []).map(function(r) {
         return { id: r.id, level: r.level, type: r.type, label: r.label };
     });
-    // Load settings
-    var stRes = await sb.from('app_settings').select('*');
-    if (stRes.data) {
+    // Settings.
+    if (stRes && stRes.data) {
         stRes.data.forEach(function(s) {
             if (s.key === 'chart_flipped') isChartFlipped = s.value === 'true';
         });
     }
-    // Validate areas
+
+    // Validate areas — fire-and-forget per-agent save so we don't block the first paint.
     var validAreaIds=floorAreas.map(function(a){return a.id;});
     var hasUnassigned = agents.some(function(a){ return !a.area || validAreaIds.indexOf(a.area)===-1; });
-    if(hasUnassigned){ autoAssignAgentsToAreas(); await save(); }
+    if (hasUnassigned) {
+        autoAssignAgentsToAreas();
+        for (var sai=0; sai<agents.length; sai++) saveAgentAsync(sai);
+    }
     maintenanceCheck();
+    // Refresh the local cache so next load paints instantly.
+    saveLocalCache();
 }
 
 function autoAssignAgentsToAreas() {
