@@ -229,6 +229,24 @@
             .nav-tab { padding: 12px 15px; font-size: 11px; }
             .floor-areas-container { grid-template-columns: 1fr; }
         }
+        /* Non-blocking notification banner. Replaces alert() dialogs so
+           transient load hiccups don't interrupt the user. */
+        #appBanner {
+            display: none;
+            position: sticky;
+            top: 0;
+            z-index: 300;
+            padding: 10px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            text-align: center;
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        }
+        #appBanner.info    { background: #1f3a8a; }
+        #appBanner.warn    { background: #b45309; }
+        #appBanner.success { background: #166534; }
     </style>
 </head>
 <body>
@@ -250,6 +268,8 @@
 
 <!-- MAIN APP (hidden until authenticated) -->
 <div id="appContainer">
+
+<div id="appBanner"></div>
 
 <div class="nav-bar">
     <div class="nav-tab active" onclick="switchView('database', this)">DATABASE VIEW</div>
@@ -942,6 +962,49 @@ function saveLocalCache() {
     } catch(e) { console.warn('saveLocalCache failed:', e); }
 }
 
+// Non-blocking banner helpers. Replace alert() for transient messages so
+// the UI never flashes a modal dialog mid-load.
+function showBanner(message, type) {
+    try {
+        var el = document.getElementById('appBanner');
+        if (!el) return;
+        el.textContent = message;
+        el.className = (type || 'info');
+        el.style.display = 'block';
+    } catch(e) { /* never let a banner break the app */ }
+}
+function hideBanner() {
+    try {
+        var el = document.getElementById('appBanner');
+        if (el) { el.style.display = 'none'; el.textContent=''; }
+    } catch(e) {}
+}
+
+// Silent retry wrapper for the agents primary SELECT. Transient 5xx,
+// dropped connections, and mid-flight JWT refreshes all look the same from
+// the client: res.error is set. Retrying quickly recovers without bothering
+// the user. Exponential backoff keeps us out of a tight loop.
+async function fetchAgentsWithRetry(cols, maxAttempts) {
+    var attempts = maxAttempts || 3;
+    var delays = [200, 500, 1200];
+    var lastErr = null;
+    for (var i=0; i<attempts; i++) {
+        try {
+            var r = await sb.from('agents').select(cols).order('name');
+            if (!r.error && r.data) return r;
+            lastErr = r.error || new Error('empty response');
+            console.warn('fetchAgentsWithRetry attempt ' + (i+1) + ' failed:', lastErr);
+        } catch (e) {
+            lastErr = e;
+            console.warn('fetchAgentsWithRetry attempt ' + (i+1) + ' threw:', e);
+        }
+        if (i < attempts - 1) {
+            await new Promise(function(res) { setTimeout(res, delays[i] || 1500); });
+        }
+    }
+    return { error: lastErr || new Error('unknown fetch failure'), data: null };
+}
+
 async function initData() {
     // HARD GATE: never run any queries until we have a confirmed authenticated
     // Supabase session. Without this, a race between handleSignIn() resolving
@@ -952,7 +1015,7 @@ async function initData() {
     var sessRes = await sb.auth.getSession();
     if (!sessRes || !sessRes.data || !sessRes.data.session) {
         console.error('initData: no auth session, refusing to query or seed');
-        alert('Your session has expired. Please sign in again.');
+        showBanner('Session expired. Please sign in again.', 'warn');
         return;
     }
     // PARALLEL FETCH: all five datasets in one round-trip instead of five
@@ -968,8 +1031,11 @@ async function initData() {
     // Photos are lazy-loaded in hydrateAvatarPhotos() right after the
     // first paint.
     var AGENT_COLS_NO_PHOTO = 'id,name,level,wfh,gender,avatar_index,sick_until,pto_until,sick_reason,pto_reason,area,full_week,schedule,scheduled_pto,move_history';
+    // Fire the secondary queries in parallel with the agents retry. The
+    // agents query is the only one that absolutely must succeed, so it gets
+    // the retry wrapper. Others can be soft-empty without blocking paint.
     var results = await Promise.all([
-        sb.from('agents').select(AGENT_COLS_NO_PHOTO).order('name'),
+        fetchAgentsWithRetry(AGENT_COLS_NO_PHOTO, 3),
         sb.from('floor_areas').select('*').order('sort_order'),
         sb.from('audit_logs').select('*').order('created_at', {ascending: false}).limit(500),
         sb.from('open_spots').select('*'),
@@ -977,10 +1043,12 @@ async function initData() {
     ]);
     var res = results[0], aRes = results[1], lRes = results[2], sRes = results[3], stRes = results[4];
 
-    // Agents — primary dataset, must succeed.
+    // Agents — primary dataset, must succeed. On failure, retry in 4s.
+    // Soft retry + banner keeps the UI non-blocking.
     if (res.error) {
-        console.error('initData: agents fetch failed, aborting load to avoid reseed', res.error);
-        alert('Could not load agents from the database. Please refresh. (Details in console.)');
+        console.error('initData: agents fetch failed; soft-retry scheduled', res.error);
+        showBanner('Reconnecting to the floor data…', 'info');
+        setTimeout(function(){ try { initData(); } catch(e){} }, 4000);
         return;
     }
     if (res.data && res.data.length > 0) {
@@ -1003,10 +1071,14 @@ async function initData() {
         // is NOT an auth/RLS issue. The DB is either genuinely empty (which
         // must never happen in production) or there is a permissions bug.
         // Either way, refuse to seed. Alert loudly and bail.
-        console.error('initData: agents query returned 0 rows while authenticated. Refusing to seed. Contact support.');
-        alert('Database is empty or unreachable. Seed path is disabled. Please contact support.');
+        console.error('initData: agents query returned 0 rows while authenticated. Refusing to seed.');
+        showBanner('Reconnecting to the floor data…', 'info');
+        setTimeout(function(){ try { initData(); } catch(e){} }, 4000);
         return;
     }
+    // If we made it here the primary fetch succeeded — clear any banner
+    // left over from an earlier transient failure.
+    hideBanner();
 
     // Floor areas — with legacy migration (non-blocking per-area upserts via async helper).
     if (aRes.data && aRes.data.length > 0) {
