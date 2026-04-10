@@ -535,7 +535,28 @@ var _reloadTimer = null;
 function reloadQuiet() {
     // Debounce realtime reloads (300ms)
     clearTimeout(_reloadTimer);
-    _reloadTimer = setTimeout(async function() { await initData(); renderAll(); }, 300);
+    _reloadTimer = setTimeout(async function() {
+        // Preserve local UI state (editing flags, open tray) across the reload,
+        // keyed by agent id so it survives array reorders.
+        var editingIds = {};
+        agents.forEach(function(a){ if(a && a.editing) editingIds[a.id] = true; });
+        var openTrayId = null;
+        var openTray = document.querySelector('.action-tray[style*="block"]');
+        if (openTray) {
+            var trayIdx = parseInt(openTray.id.replace('tray-',''),10);
+            if (!isNaN(trayIdx) && agents[trayIdx]) openTrayId = agents[trayIdx].id;
+        }
+        await initData();
+        // Restore editing flags
+        agents.forEach(function(a){ if(a && editingIds[a.id]) a.editing = true; });
+        renderAll();
+        // Reopen the tray that was open, if the agent still exists
+        if (openTrayId) {
+            for (var i=0; i<agents.length; i++) {
+                if (agents[i].id === openTrayId) { toggleTray(i); break; }
+            }
+        }
+    }, 300);
 }
 
 // ==================== ILLUSTRATED AVATAR SVGs ====================
