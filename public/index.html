@@ -79,7 +79,7 @@
         /* AVATAR CARDS - ORG CHART STYLE */
         .org-card { background: linear-gradient(145deg, #ffffff, #e8eef5); border: 2px solid #b0c0e8; border-radius: 14px; padding: 15px; width: 160px; text-align: center; cursor: grab; transition: 0.3s; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         .org-card:hover { transform: translateY(-4px); box-shadow: 0 8px 25px rgba(1,204,116,0.25); border-color: var(--dl-green); }
-        .org-card.dragging { opacity: 0.4; }
+        .org-card.dragging { opacity: 0.4; border-style: dashed !important; transform: scale(0.95) rotate(-2deg); }
         .org-card .card-avatar { width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 8px; display: block; object-fit: cover; border: 3px solid var(--dl-green); background: #e0e0e0; box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
         .org-card .card-name { font-weight: bold; font-size: 14px; color: #2F3E83; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
         .org-card .card-role { font-size: 10px; color: #8090b8; margin-bottom: 6px; }
@@ -167,7 +167,19 @@
         .level-drop-box:hover { border-color: var(--dl-green); color: var(--dl-green); background: rgba(1,204,116,0.08); }
         .level-drop-box.dragging { opacity: 0.5; transform: scale(0.95); }
         .level-drop-box .drop-box-count { display: block; font-size: 16px; font-weight: bold; margin-top: 2px; }
-        .org-card.role-drag-over { outline: 3px solid var(--dl-green); outline-offset: 2px; box-shadow: 0 0 20px rgba(1,204,116,0.4); }
+        .org-card.role-drag-over { outline: 3px dashed var(--dl-green); outline-offset: 4px; box-shadow: 0 0 25px rgba(1,204,116,0.6), inset 0 0 15px rgba(1,204,116,0.2); transform: scale(1.03); transition: outline 0.05s, transform 0.15s; }
+        .org-card.drag-over { outline: 3px dashed var(--dl-pink); outline-offset: 4px; box-shadow: 0 0 25px rgba(255,73,152,0.5); transform: scale(1.03); transition: outline 0.05s, transform 0.15s; }
+        .org-level-cards.drag-over { background: rgba(1,204,116,0.08); outline: 3px dashed var(--dl-green); outline-offset: -6px; border-radius: 10px; }
+        .floor-area-body.drag-over { background: rgba(1,204,116,0.1); outline: 3px dashed var(--dl-green); outline-offset: -6px; border-radius: 8px; }
+        .area-avatar-chip.dragging { opacity: 0.4; border-style: dashed !important; transform: scale(0.92); }
+        .level-drop-box.dragging { opacity: 0.5; transform: scale(0.95); border-style: dashed !important; }
+        /* Ghost cursor feedback while ANY drag is in progress — neutralize nested pointer events
+           inside drop targets so dragover/drop bubble cleanly to the org-card wrapper. */
+        body.dragging-active .org-card * { pointer-events: none !important; }
+        body.dragging-active .org-card { pointer-events: auto !important; }
+        body.dragging-active .area-avatar-chip * { pointer-events: none !important; }
+        body.dragging-active .area-avatar-chip { pointer-events: auto !important; }
+        body.dragging-active .org-card:not(.dragging):hover { outline: 2px dashed rgba(1,204,116,0.6); outline-offset: 3px; }
 
         /* PROMINENT ON FLOOR STATUS */
         .card-status.badge-floor { background: var(--green); color: #000; font-size: 12px; padding: 5px 12px; font-weight: bold; animation: pulse-glow 2s infinite; }
@@ -356,6 +368,7 @@
         <div style="margin-bottom:15px;"><label>Reason</label><textarea id="oooReason" placeholder="Enter reason (optional)..."></textarea></div>
         <div class="modal-actions">
             <button onclick="closeModal('oooModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
+            <button id="oooClearBtn" onclick="clearOooStatus()" style="background:#d32f2f; color:#fff; display:none;">CLEAR CURRENT STATUS</button>
             <button onclick="saveOoo()" style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;">SAVE</button>
         </div>
         <div style="margin-top:20px;"><h3 style="color:#8090b8; font-size:12px; text-transform:uppercase;">Scheduled Time Off</h3><div id="scheduledPtoList"></div></div>
@@ -575,17 +588,20 @@ function setupRealtime() {
 }
 var _reloadTimer = null;
 var _reloadPending = false;
+var _saving = false;
 function reloadQuiet() {
     // Debounce realtime reloads (400ms)
     clearTimeout(_reloadTimer);
     _reloadPending = true;
     _reloadTimer = setTimeout(async function() {
-        // SAFETY: never reload while a modal is open or while a drag is in progress,
-        // because either can cause currentModalAgent / dragAgentIdx to point at the wrong
-        // row after the agents array is replaced. Retry shortly.
+        // SAFETY: never reload while a modal is open, while a drag is in progress,
+        // while a row is in edit mode, or while a save() is actively upserting.
+        // Any of these can cause currentModalAgent / dragAgentIdx / edit inputs
+        // to point at the wrong row after the agents array is replaced. Retry shortly.
         var openModal = document.querySelector('.modal-overlay.show');
         var dragging = document.querySelector('.dragging');
-        if (openModal || dragging) {
+        var editingRow = agents && agents.some(function(a){ return a && a.editing; });
+        if (openModal || dragging || editingRow || _saving) {
             _reloadTimer = setTimeout(reloadQuiet, 500);
             return;
         }
@@ -994,6 +1010,9 @@ async function save() {
     // NOTE: do NOT sort agents here — that would reorder indices while modals/trays
     // may be open and cause SICK/PTO/MOVE/EDIT targets to point at wrong rows.
     // Sorted order is restored by the next initData() call which uses .order('name').
+    // Guard: set _saving so realtime reloadQuiet skips while we're upserting.
+    _saving = true;
+    try {
     // Upsert agents to Supabase
     for (var i=0; i<agents.length; i++) {
         var a = agents[i];
@@ -1022,6 +1041,9 @@ async function save() {
         await sb.from('open_spots').insert({
             level: openSpots[k].level, type: openSpots[k].type, label: openSpots[k].label || ''
         });
+    }
+    } finally {
+        _saving = false;
     }
 }
 
@@ -1067,9 +1089,18 @@ function switchView(view,el) {
 // ==================== DATABASE VIEW ====================
 function toggleTray(idx) {
     var tray=document.getElementById('tray-'+idx);
+    if(!tray)return;
     var vis=tray.style.display==='block';
     document.querySelectorAll('.action-tray').forEach(function(t){t.style.display='none';});
     tray.style.display=vis?'none':'block';
+}
+// Snappy local re-render: rebuild the table and force-open a specific tray.
+// Used by in-tray buttons that change UI state (EDIT / EDIT WEEK / ON-OFF toggle)
+// so the user NEVER sees the tray flicker closed or race a setTimeout.
+function reopenTray(idx) {
+    renderTable();
+    var tray = document.getElementById('tray-'+idx);
+    if (tray) tray.style.display = 'block';
 }
 
 function renderTable() {
@@ -1114,13 +1145,14 @@ function renderTable() {
                 '<div style="display:flex;align-items:center;gap:12px;">'+
                 '<img src="'+avatarSrc+'" style="width:55px;height:60px;border-radius:10px;object-fit:cover;border:2px solid #01CC74;background:#e8eef5;">'+
                 '<div><strong style="font-size:18px;color:#01CC74">'+a.name+'</strong><br><span style="color:#8090b8;">Level: '+a.level+'</span></div></div>'+
-                '<button onclick="event.stopPropagation();agents['+i+'].fullWeek=!agents['+i+'].fullWeek;save();renderTable();setTimeout(function(){toggleTray('+i+')},50);" style="color:#01CC74;background:rgba(1,204,116,0.1);border:1px solid #01CC74;">'+(agents[i].fullWeek?'EDIT TODAY':'EDIT WEEK')+'</button></div>'+
+                '<button onclick="event.stopPropagation();agents['+i+'].fullWeek=!agents['+i+'].fullWeek;agents['+i+'].editing=true;reopenTray('+i+');" style="color:#01CC74;background:rgba(1,204,116,0.1);border:1px solid #01CC74;">'+(agents[i].fullWeek?'EDIT TODAY':'EDIT WEEK')+'</button></div>'+
                 '<div style="display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap;">'+
+                (agents[i].sickUntil||agents[i].ptoUntil?'<button onclick="event.stopPropagation();quickClearStatus('+i+')" style="background:#d32f2f;color:#fff;font-weight:bold;">CLEAR '+(agents[i].sickUntil?'SICK':'PTO')+'</button>':'')+
                 '<button class="btn-sick" onclick="event.stopPropagation();openOooModal('+i+',\'sick\')">SICK</button>'+
                 '<button class="btn-pto" onclick="event.stopPropagation();openOooModal('+i+',\'pto\')">PTO / OOO</button>'+
                 '<button class="btn-promote" onclick="event.stopPropagation();openPromoteModal('+i+')">PROMOTE</button>'+
                 '<button onclick="event.stopPropagation();openAvatarPicker('+i+')" style="background:rgba(1,204,116,0.1);color:#01CC74;border:1px solid #01CC74;">AVATAR</button>'+
-                '<button onclick="event.stopPropagation();agents['+i+'].editing=true;save();renderTable();setTimeout(function(){toggleTray('+i+')},50);" style="background:rgba(1,204,116,0.1);color:#01CC74;border:1px solid #01CC74;">EDIT</button>'+
+                '<button onclick="event.stopPropagation();agents['+i+'].editing=true;reopenTray('+i+');" style="background:rgba(1,204,116,0.1);color:#01CC74;border:1px solid #01CC74;">EDIT</button>'+
                 '<button class="btn-term" onclick="event.stopPropagation();openTerminateModal('+i+')">REMOVE</button></div>'+
                 editHtml+ptoHtml+'</div></td></tr>';
         }
@@ -1139,7 +1171,7 @@ function renderEditForm(i,curDay,a,s) {
     if(agents[i].fullWeek){
         sh='<div class="weekly-grid">';
         days.forEach(function(d){
-            sh+='<div class="day-box"><strong>'+d.substring(0,3)+'</strong><br><button onclick="event.stopPropagation();agents['+i+'].schedule[\''+d+'\'].isOff=!agents['+i+'].schedule[\''+d+'\'].isOff;save();renderTable();setTimeout(function(){toggleTray('+i+')},50);" style="font-size:9px;margin:3px 0;">'+(agents[i].schedule[d].isOff?'OFF':'ON')+'</button><input type="time" id="s-'+i+'-'+d+'" value="'+agents[i].schedule[d].start+'"><input type="time" id="e-'+i+'-'+d+'" value="'+agents[i].schedule[d].end+'"><input type="time" id="l-'+i+'-'+d+'" value="'+agents[i].schedule[d].lunch+'"></div>';
+            sh+='<div class="day-box"><strong>'+d.substring(0,3)+'</strong><br><button onclick="event.stopPropagation();agents['+i+'].schedule[\''+d+'\'].isOff=!agents['+i+'].schedule[\''+d+'\'].isOff;reopenTray('+i+');" style="font-size:9px;margin:3px 0;">'+(agents[i].schedule[d].isOff?'OFF':'ON')+'</button><input type="time" id="s-'+i+'-'+d+'" value="'+agents[i].schedule[d].start+'"><input type="time" id="e-'+i+'-'+d+'" value="'+agents[i].schedule[d].end+'"><input type="time" id="l-'+i+'-'+d+'" value="'+agents[i].schedule[d].lunch+'"></div>';
         });
         sh+='</div>';
     } else {
@@ -1246,6 +1278,9 @@ function renderFloorView() {
             html+='<div style="text-align:center;"><span class="card-status '+st.badge+'">'+st.status+'</span></div>';
             html+=reasonLine;
             html+='<div class="card-actions">';
+            if(a.sickUntil||a.ptoUntil){
+                html+='<button style="background:#d32f2f;color:#fff;font-weight:bold;" onclick="event.stopPropagation();quickClearStatus('+idx+')">CLEAR '+(a.sickUntil?'SICK':'PTO')+'</button>';
+            }
             html+='<button style="background:rgba(255,68,68,0.8);" onclick="event.stopPropagation();openOooModal('+idx+',\'sick\')">SICK</button>';
             html+='<button style="background:rgba(255,165,0,0.8);" onclick="event.stopPropagation();openOooModal('+idx+',\'pto\')">PTO</button>';
             html+='<button style="background:rgba(255,73,152,0.8);" onclick="event.stopPropagation();openMoveModal('+idx+')">MOVE</button>';
@@ -1386,10 +1421,10 @@ async function removeSpot(idx) {
 // ==================== DRAG & DROP ====================
 var dragAgentIdx=-1;
 var dragRoleLevel=null;
-function onDragStart(e,idx){dragAgentIdx=idx;dragRoleLevel=null;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',idx.toString());e.dataTransfer.setData('dragType','agent');var c=e.target.closest('.org-card')||e.target.closest('.area-avatar-chip');if(c)c.classList.add('dragging');}
-function onDragEnd(e){dragAgentIdx=-1;dragRoleLevel=null;document.querySelectorAll('.dragging').forEach(function(el){el.classList.remove('dragging');});document.querySelectorAll('.drag-over').forEach(function(el){el.classList.remove('drag-over');});document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});}
-function onRoleDragStart(e,level){dragRoleLevel=level;dragAgentIdx=-1;e.dataTransfer.effectAllowed='copy';e.dataTransfer.setData('text/plain',level);e.dataTransfer.setData('dragType','role');e.target.classList.add('dragging');}
-function onRoleDragEnd(e){dragRoleLevel=null;if(e&&e.target&&e.target.classList)e.target.classList.remove('dragging');document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});document.querySelectorAll('.dragging').forEach(function(el){el.classList.remove('dragging');});}
+function onDragStart(e,idx){dragAgentIdx=idx;dragRoleLevel=null;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',idx.toString());e.dataTransfer.setData('dragType','agent');var c=e.target.closest('.org-card')||e.target.closest('.area-avatar-chip');if(c)c.classList.add('dragging');document.body.classList.add('dragging-active');}
+function onDragEnd(e){dragAgentIdx=-1;dragRoleLevel=null;document.body.classList.remove('dragging-active');document.querySelectorAll('.dragging').forEach(function(el){el.classList.remove('dragging');});document.querySelectorAll('.drag-over').forEach(function(el){el.classList.remove('drag-over');});document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});}
+function onRoleDragStart(e,level){dragRoleLevel=level;dragAgentIdx=-1;e.dataTransfer.effectAllowed='copy';e.dataTransfer.setData('text/plain',level);e.dataTransfer.setData('dragType','role');e.target.classList.add('dragging');document.body.classList.add('dragging-active');}
+function onRoleDragEnd(e){dragRoleLevel=null;document.body.classList.remove('dragging-active');if(e&&e.target&&e.target.classList)e.target.classList.remove('dragging');document.querySelectorAll('.role-drag-over').forEach(function(el){el.classList.remove('role-drag-over');});document.querySelectorAll('.dragging').forEach(function(el){el.classList.remove('dragging');});}
 function onCardDragOver(e){e.preventDefault();e.dataTransfer.dropEffect=dragRoleLevel?'copy':'move';if(dragRoleLevel){e.currentTarget.classList.add('role-drag-over');}else{e.currentTarget.classList.add('drag-over');}}
 function onCardDragLeave(e){e.currentTarget.classList.remove('role-drag-over');e.currentTarget.classList.remove('drag-over');}
 async function onDropRoleOnAgent(e,agentIdx){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('role-drag-over');e.currentTarget.classList.remove('drag-over');if(!dragRoleLevel){dragAgentIdx=-1;return;}var oldLevel=agents[agentIdx].level;if(oldLevel!==dragRoleLevel){agents[agentIdx].level=dragRoleLevel;agents[agentIdx].moveHistory=agents[agentIdx].moveHistory||[];agents[agentIdx].moveHistory.push({from:oldLevel,to:dragRoleLevel,type:'level_change',date:new Date().toISOString()});await addAuditLog('move',agents[agentIdx].name+' moved from '+oldLevel+' to '+dragRoleLevel,agents[agentIdx].name);await save();}dragRoleLevel=null;dragAgentIdx=-1;renderFloorView();renderLevelDropSidebar();}
@@ -1464,7 +1499,9 @@ function handlePhotoUpload(event) {
 async function saveAvatar(){if(currentModalAgent<0)return;agents[currentModalAgent].gender=selectedAvatarGender;agents[currentModalAgent].avatarIndex=selectedAvatarIndex;agents[currentModalAgent].avatarPhoto=pendingPhotoData||null;await save();closeModal('avatarModal');renderAll();}
 
 // ==================== OOO MODAL ====================
-function openOooModal(idx,type){currentModalAgent=idx;var a=agents[idx];document.getElementById('oooModalTitle').textContent=type==='sick'?'MARK SICK':'MARK PTO / OUT OF OFFICE';document.getElementById('oooModalName').textContent=a.name+' - '+a.level;document.getElementById('oooType').value=type;var today=new Date().toISOString().split('T')[0];document.getElementById('oooStart').value=today;document.getElementById('oooEnd').value=today;document.getElementById('oooReason').value='';renderScheduledPto(idx);document.getElementById('oooModal').classList.add('show');}
+function openOooModal(idx,type){currentModalAgent=idx;var a=agents[idx];document.getElementById('oooModalTitle').textContent=type==='sick'?'MARK SICK':'MARK PTO / OUT OF OFFICE';document.getElementById('oooModalName').textContent=a.name+' - '+a.level;document.getElementById('oooType').value=type;var today=new Date().toISOString().split('T')[0];document.getElementById('oooStart').value=today;document.getElementById('oooEnd').value=today;document.getElementById('oooReason').value='';renderScheduledPto(idx);var clearBtn=document.getElementById('oooClearBtn');var isOut=!!(a.sickUntil||a.ptoUntil);clearBtn.style.display=isOut?'inline-block':'none';clearBtn.textContent=a.sickUntil?'CLEAR SICK':(a.ptoUntil?'CLEAR PTO':'CLEAR');document.getElementById('oooModal').classList.add('show');}
+async function clearOooStatus(){if(currentModalAgent<0)return;var a=agents[currentModalAgent];var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':'OOO');a.sickUntil=null;a.sickReason=null;a.ptoUntil=null;a.ptoReason=null;await addAuditLog('clear',a.name+' cleared from '+was+' status',a.name);await save();closeModal('oooModal');renderAll();}
+async function quickClearStatus(idx){var a=agents[idx];if(!a)return;var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':'OOO');a.sickUntil=null;a.sickReason=null;a.ptoUntil=null;a.ptoReason=null;await addAuditLog('clear',a.name+' cleared from '+was+' status',a.name);await save();renderAll();}
 
 function renderScheduledPto(idx){var list=document.getElementById('scheduledPtoList');var a=agents[idx];if(!a.scheduledPto||a.scheduledPto.length===0){list.innerHTML='<div style="color:#8090b8;font-size:11px;padding:5px;">No scheduled time off</div>';return;}var h='';a.scheduledPto.forEach(function(p,pi){var ts=p.type==='sick'?'background:rgba(255,68,68,0.2);color:var(--red)':'background:rgba(255,165,0,0.2);color:var(--orange)';h+='<div class="pto-schedule-item"><div><span class="pto-type" style="'+ts+'">'+p.type.toUpperCase()+'</span> <span style="margin-left:8px;">'+p.startDate+' to '+p.endDate+'</span>'+(p.reason?'<br><span style="color:#8090b8;font-size:11px;">'+p.reason+'</span>':'')+'</div><button onclick="event.stopPropagation();agents['+idx+'].scheduledPto.splice('+pi+',1);save();renderScheduledPto('+idx+');" style="background:transparent;color:var(--red);font-size:14px;padding:2px 6px;">X</button></div>';});list.innerHTML=h;}
 
