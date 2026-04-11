@@ -247,6 +247,67 @@
         #appBanner.info    { background: #1f3a8a; }
         #appBanner.warn    { background: #b45309; }
         #appBanner.success { background: #166534; }
+
+        /* WFH day-of-week highlight — glow the letter for the matching weekday */
+        .wfh-glow {
+            display: inline-block;
+            color: #ffd700;
+            font-weight: 900;
+            padding: 0 2px;
+            text-shadow: 0 0 6px #ffd700, 0 0 12px rgba(255,215,0,0.6);
+            animation: wfh-pulse 2.2s ease-in-out infinite;
+        }
+        @keyframes wfh-pulse {
+            0%,100% { text-shadow: 0 0 4px #ffd700, 0 0 8px rgba(255,215,0,0.45); }
+            50%     { text-shadow: 0 0 12px #ffd700, 0 0 22px rgba(255,215,0,0.95); }
+        }
+
+        /* Temporary WFH status styling — parallel to sick/pto */
+        .btn-wfh { background: rgba(255,215,0,0.85) !important; color:#1a1a1a !important; font-weight:700; }
+        .btn-notes { background: rgba(1,204,116,0.15); color:#01CC74; border:1px solid #01CC74; margin-left:6px; font-size:11px; }
+        .btn-notes.has-notes { background: rgba(255,215,0,0.15); color:#ffd700; border-color:#ffd700; }
+        tr.row-wfh td { background: rgba(255,215,0,0.08) !important; }
+        .status-wfh { color: #ffd700 !important; font-weight: 700; }
+        .badge-wfh { background: rgba(255,215,0,0.2); color: #ffd700; }
+
+        /* Notes modal history list */
+        .notes-history {
+            max-height: 260px;
+            overflow-y: auto;
+            background: #0f1838;
+            border-radius: 8px;
+            padding: 8px;
+            margin-bottom: 15px;
+        }
+        .notes-history:empty::before {
+            content: 'No notes yet.';
+            color: #8090b8;
+            font-size: 12px;
+            font-style: italic;
+            padding: 10px;
+            display: block;
+            text-align: center;
+        }
+        .note-entry {
+            background: #1a2352;
+            border-left: 3px solid #01CC74;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            border-radius: 4px;
+        }
+        .note-entry .note-ts {
+            font-size: 10px;
+            color: #8090b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .note-entry .note-body {
+            font-size: 13px;
+            color: #e6ebf5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
     </style>
 </head>
 <body>
@@ -384,7 +445,7 @@
     <div class="modal">
         <h2 id="oooModalTitle">MARK OUT OF OFFICE</h2>
         <p style="color:#8090b8; font-size:12px;" id="oooModalName"></p>
-        <div style="margin-bottom:15px;"><label>Type</label><select id="oooType"><option value="sick">Sick</option><option value="pto">PTO</option><option value="ooo">Out of Office</option></select></div>
+        <div style="margin-bottom:15px;"><label>Type</label><select id="oooType"><option value="sick">Sick</option><option value="pto">PTO</option><option value="wfh">WFH (Temporary)</option><option value="ooo">Out of Office</option></select></div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:15px;">
             <div><label>Start Date</label><input type="date" id="oooStart"></div>
             <div><label>End Date</label><input type="date" id="oooEnd"></div>
@@ -396,6 +457,23 @@
             <button onclick="saveOoo()" style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;">SAVE</button>
         </div>
         <div style="margin-top:20px;"><h3 style="color:#8090b8; font-size:12px; text-transform:uppercase;">Scheduled Time Off</h3><div id="scheduledPtoList"></div></div>
+    </div>
+</div>
+
+<!-- NOTES MODAL — per-agent timestamped append-only notepad -->
+<div class="modal-overlay" id="notesModal">
+    <div class="modal">
+        <h2>AGENT NOTES</h2>
+        <p style="color:#8090b8; font-size:12px;" id="notesModalName"></p>
+        <div class="notes-history" id="notesHistory"></div>
+        <div style="margin-bottom:15px;">
+            <label>New Note</label>
+            <textarea id="newNoteText" placeholder="Type a new note… (it will be time-stamped on save)" style="min-height:90px;"></textarea>
+        </div>
+        <div class="modal-actions">
+            <button onclick="closeModal('notesModal')" style="background:#3d4f99; color:#fff;">CANCEL</button>
+            <button onclick="saveNote()" style="background:linear-gradient(135deg,#01CC74,#01e680); color:#000;">SAVE NOTE</button>
+        </div>
     </div>
 </div>
 
@@ -984,15 +1062,45 @@ function hideBanner() {
 // dropped connections, and mid-flight JWT refreshes all look the same from
 // the client: res.error is set. Retrying quickly recovers without bothering
 // the user. Exponential backoff keeps us out of a tight loop.
+// Runtime schema-awareness for the optional `notes` column. Default true so
+// first paint is fast when the migration has been applied; if the column is
+// missing, fetchAgentsWithRetry flips this to false and every downstream
+// caller (agentToRow, openNotesModal, saveNote) gracefully degrades. This
+// keeps the app fully functional even if the deploy goes live BEFORE the
+// SQL migration is run — no 400s, no broken rows, just notes disabled until
+// the column shows up.
+var NOTES_COL_AVAILABLE = true;
+function isMissingNotesColumnError(err) {
+    if (!err) return false;
+    var code = err.code || '';
+    var msg  = (err.message || '') + ' ' + (err.details || '') + ' ' + (err.hint || '');
+    // PostgREST returns 42703 for "column does not exist"
+    if (code === '42703') return true;
+    return /column .*notes.* does not exist|notes.*does not exist|could not find the .notes. column/i.test(msg);
+}
+function stripNotesFromCols(cols) {
+    return cols.split(',').filter(function(c){ return c.trim() !== 'notes'; }).join(',');
+}
 async function fetchAgentsWithRetry(cols, maxAttempts) {
     var attempts = maxAttempts || 3;
     var delays = [200, 500, 1200];
     var lastErr = null;
     for (var i=0; i<attempts; i++) {
         try {
-            var r = await sb.from('agents').select(cols).order('name');
+            var useCols = NOTES_COL_AVAILABLE ? cols : stripNotesFromCols(cols);
+            var r = await sb.from('agents').select(useCols).order('name');
             if (!r.error && r.data) return r;
-            lastErr = r.error || new Error('empty response');
+            // If the only thing wrong is the missing notes column, downgrade
+            // and retry immediately in the same attempt budget.
+            if (r.error && NOTES_COL_AVAILABLE && isMissingNotesColumnError(r.error)) {
+                console.warn('fetchAgentsWithRetry: notes column not present yet, downgrading');
+                NOTES_COL_AVAILABLE = false;
+                var r2 = await sb.from('agents').select(stripNotesFromCols(cols)).order('name');
+                if (!r2.error && r2.data) return r2;
+                lastErr = r2.error || new Error('empty response after notes downgrade');
+            } else {
+                lastErr = r.error || new Error('empty response');
+            }
             console.warn('fetchAgentsWithRetry attempt ' + (i+1) + ' failed:', lastErr);
         } catch (e) {
             lastErr = e;
@@ -1030,7 +1138,7 @@ async function initData() {
     // "could not load" alert (2026-04-10 incident, part 2).
     // Photos are lazy-loaded in hydrateAvatarPhotos() right after the
     // first paint.
-    var AGENT_COLS_NO_PHOTO = 'id,name,level,wfh,gender,avatar_index,sick_until,pto_until,sick_reason,pto_reason,area,full_week,schedule,scheduled_pto,move_history';
+    var AGENT_COLS_NO_PHOTO = 'id,name,level,wfh,gender,avatar_index,sick_until,pto_until,sick_reason,pto_reason,area,full_week,schedule,scheduled_pto,move_history,notes';
     // Fire the secondary queries in parallel with the agents retry. The
     // agents query is the only one that absolutely must succeed, so it gets
     // the retry wrapper. Others can be soft-empty without blocking paint.
@@ -1053,18 +1161,24 @@ async function initData() {
     }
     if (res.data && res.data.length > 0) {
         agents = res.data.map(function(r) {
-            return {
+            var a = {
                 id: r.id, name: r.name, level: r.level, wfh: r.wfh || '-',
                 gender: r.gender || 'male', avatarIndex: r.avatar_index || 0,
                 avatarPhoto: r.avatar_photo || null,
                 sickUntil: r.sick_until, ptoUntil: r.pto_until,
                 sickReason: r.sick_reason, ptoReason: r.pto_reason,
+                wfhUntil: null, wfhReason: null,    // derived below from scheduled_pto
                 area: r.area, fullWeek: r.full_week || false,
                 schedule: r.schedule || buildWeek('09:00','18:00','13:00'),
                 scheduledPto: r.scheduled_pto || [],
                 moveHistory: r.move_history || [],
+                // r.notes is undefined when the migration hasn't been run yet;
+                // fall back to [] so openNotesModal still has something to iterate.
+                notes: (r.notes && r.notes.length) ? r.notes : [],
                 editing: false
             };
+            deriveCurrentWfh(a);
+            return a;
         });
     } else {
         // Zero rows returned. We are authenticated (checked above), so this
@@ -1195,18 +1309,31 @@ function maintenanceCheck() {
     if (lastCheck !== todayStr) {
         var nowT = now.getTime();
         agents.forEach(function(a) {
+            // Clear expired live statuses. EOD is inclusive — we only clear
+            // strictly AFTER the stored end timestamp, so the last day stays
+            // fully marked.
             if(a.sickUntil&&nowT>a.sickUntil){a.sickUntil=null;a.sickReason=null;}
-            if(a.ptoUntil&&nowT>a.ptoUntil){a.ptoUntil=null;a.ptoReason=null;}
+            if(a.ptoUntil &&nowT>a.ptoUntil ){a.ptoUntil =null;a.ptoReason =null;}
+            if(a.wfhUntil &&nowT>a.wfhUntil ){a.wfhUntil =null;a.wfhReason =null;}
             if(a.scheduledPto){
                 a.scheduledPto.forEach(function(pto){
-                    var start=new Date(pto.startDate).getTime();
-                    var endD=new Date(pto.endDate);endD.setHours(23,59,59);var end=endD.getTime();
-                    if(nowT>=start&&nowT<=end&&!a.ptoUntil&&!a.sickUntil){
-                        if(pto.type==='sick'){a.sickUntil=end;a.sickReason=pto.reason;}
-                        else{a.ptoUntil=end;a.ptoReason=pto.reason;}
+                    var startD=new Date(pto.startDate+'T00:00:00');
+                    var endD  =new Date(pto.endDate  +'T23:59:59.999');
+                    var start=startD.getTime();var end=endD.getTime();
+                    if(nowT>=start&&nowT<=end){
+                        if(pto.type==='sick' && !a.sickUntil && !a.ptoUntil && !a.wfhUntil){
+                            a.sickUntil=end; a.sickReason=pto.reason;
+                        } else if(pto.type==='wfh' && !a.sickUntil && !a.ptoUntil && !a.wfhUntil){
+                            a.wfhUntil=end;  a.wfhReason=pto.reason;
+                        } else if((pto.type==='pto'||pto.type==='ooo') && !a.sickUntil && !a.ptoUntil && !a.wfhUntil){
+                            a.ptoUntil=end;  a.ptoReason=pto.reason;
+                        }
                     }
                 });
-                a.scheduledPto=a.scheduledPto.filter(function(p){var eD=new Date(p.endDate);eD.setHours(23,59,59);return eD.getTime()>=nowT;});
+                a.scheduledPto=a.scheduledPto.filter(function(p){
+                    var eD=new Date(p.endDate+'T23:59:59.999');
+                    return eD.getTime()>=nowT;
+                });
             }
         });
         localStorage.setItem('dl_v3_last_maintenance',todayStr);
@@ -1217,7 +1344,7 @@ function maintenanceCheck() {
 // Serialize one agent for the DB. Kept as a helper so saveAgent() and save() stay in sync.
 function agentToRow(a) {
     if (!a.id) a.id = generateUUID();
-    return {
+    var row = {
         id: a.id, name: a.name, level: a.level, wfh: a.wfh || '-',
         gender: a.gender || 'male', avatar_index: a.avatarIndex || 0,
         avatar_photo: a.avatarPhoto || null,
@@ -1227,6 +1354,11 @@ function agentToRow(a) {
         schedule: a.schedule, scheduled_pto: a.scheduledPto || [],
         move_history: a.moveHistory || []
     };
+    // Only include the notes column when we've verified the schema has it.
+    // Sending it while the column doesn't exist yet triggers PostgREST 42703
+    // errors on every upsert and would break SICK/PTO/rename/promote flows.
+    if (NOTES_COL_AVAILABLE) row.notes = a.notes || [];
+    return row;
 }
 
 // Single-agent upsert — ~100ms round trip instead of 2-5 seconds for all 23.
@@ -1343,11 +1475,70 @@ function formatTime(t) {
     return(h%12||12)+':'+m.toString().padStart(2,'0')+' '+(h>=12?'PM':'AM');
 }
 
+// ==================== WFH HELPERS ====================
+// Map JS day-of-week (0=Sun..6=Sat) to the letter codes used in the wfh column.
+// Codes: M=Mon, T=Tue, W=Wed, TH=Thu, F=Fri.
+function wfhCodeForToday() {
+    var d = new Date().getDay();
+    return ({1:'M', 2:'T', 3:'W', 4:'TH', 5:'F'})[d] || null;
+}
+// Parse a wfh string like "F", "W,F", "T/TH", "T, TH" into an array of tokens.
+function parseWfhTokens(wfhStr) {
+    if (!wfhStr || wfhStr === '-') return [];
+    return wfhStr.toUpperCase().split(/[\s,\/]+/).filter(function(t){return t.length>0;});
+}
+// True iff the agent's recurring WFH schedule includes today's weekday.
+function isWfhToday(wfhStr) {
+    var today = wfhCodeForToday();
+    if (!today) return false;
+    var toks = parseWfhTokens(wfhStr);
+    for (var i=0; i<toks.length; i++) if (toks[i] === today) return true;
+    return false;
+}
+// Render the WFH column cell, wrapping today's matching letter in .wfh-glow.
+function formatWfhCell(wfhStr) {
+    var toks = parseWfhTokens(wfhStr);
+    if (toks.length === 0) return '-';
+    var today = wfhCodeForToday();
+    var parts = [];
+    for (var i=0; i<toks.length; i++) {
+        var t = toks[i];
+        if (today && t === today) parts.push('<span class="wfh-glow">'+t+'</span>');
+        else parts.push(t);
+    }
+    return parts.join(',');
+}
+// Derive the current-temporary-WFH state from the scheduledPto jsonb array.
+// Stored transient on the agent as wfhUntil (ms) + wfhReason (text). We keep
+// temporary WFH inside scheduled_pto instead of adding a new DB column so
+// there is no schema migration needed for this feature. Called on every
+// initData row map and after saveOoo.
+function deriveCurrentWfh(a) {
+    a.wfhUntil = null;
+    a.wfhReason = null;
+    if (!a.scheduledPto || a.scheduledPto.length === 0) return;
+    var nowT = Date.now();
+    for (var i=0; i<a.scheduledPto.length; i++) {
+        var p = a.scheduledPto[i];
+        if (p.type !== 'wfh') continue;
+        var startD = new Date(p.startDate + 'T00:00:00');
+        var endD   = new Date(p.endDate   + 'T23:59:59.999');
+        var start = startD.getTime();
+        var end   = endD.getTime();
+        if (nowT >= start && nowT <= end) {
+            a.wfhUntil = end;
+            a.wfhReason = p.reason || null;
+            return;
+        }
+    }
+}
+
 function getStatus(agent) {
     var now=new Date();var curDay=days[now.getDay()];var curM=now.getHours()*60+now.getMinutes();
     var s=agent.schedule[curDay];
-    if(agent.sickUntil&&now.getTime()<agent.sickUntil)return{status:'SICK',css:'status-sick',badge:'badge-sick',reason:agent.sickReason};
-    if(agent.ptoUntil&&now.getTime()<agent.ptoUntil)return{status:'PTO',css:'status-pto',badge:'badge-pto',reason:agent.ptoReason};
+    if(agent.sickUntil&&now.getTime()<=agent.sickUntil)return{status:'SICK',css:'status-sick',badge:'badge-sick',reason:agent.sickReason};
+    if(agent.ptoUntil&&now.getTime()<=agent.ptoUntil)return{status:'PTO',css:'status-pto',badge:'badge-pto',reason:agent.ptoReason};
+    if(agent.wfhUntil&&now.getTime()<=agent.wfhUntil)return{status:'WFH',css:'status-wfh',badge:'badge-wfh',reason:agent.wfhReason};
     if(s.isOff)return{status:'OFF',css:'status-off',badge:'badge-off'};
     var sp=s.start.split(':');var startM=parseInt(sp[0])*60+parseInt(sp[1]);
     var ep=s.end.split(':');var endM=parseInt(ep[0])*60+parseInt(ep[1]);
@@ -1412,16 +1603,19 @@ function renderTable() {
                 });
                 ptoHtml+='</div>';
             }
-            var rowState = st.status === 'SICK' ? ' row-sick' : (st.status === 'PTO' ? ' row-pto' : '');
+            var rowState = st.status === 'SICK' ? ' row-sick' : (st.status === 'PTO' ? ' row-pto' : (st.status === 'WFH' ? ' row-wfh' : ''));
+            var noteCount = (a.notes && a.notes.length) ? a.notes.length : 0;
+            var noteBtnClass = noteCount > 0 ? 'btn-notes has-notes' : 'btn-notes';
+            var noteBtnLabel = noteCount > 0 ? ('NOTES ('+noteCount+')') : 'NOTES';
             html+='<tr class="'+rowState.trim()+'" onclick="toggleTray('+i+')">'+
                 '<td style="width:40px;padding:5px;"><img src="'+avatarSrc+'" style="width:38px;height:42px;border-radius:8px;object-fit:cover;border:2px solid #3d4f99;cursor:pointer;background:#e8eef5;" onclick="event.stopPropagation();openAvatarPicker('+i+')"></td>'+
                 '<td><strong>'+a.name+'</strong></td>'+
                 '<td class="mobile-hide">'+a.level+'</td>'+
                 '<td>'+formatTime(s.start)+' - '+formatTime(s.end)+'</td>'+
                 '<td style="'+(s.isOff?'color:var(--red)':'color:var(--orange)')+'">'+(s.isOff?'OFF':formatTime(s.lunch))+'</td>'+
-                '<td class="mobile-hide">'+(a.wfh||'-')+'</td>'+
+                '<td class="mobile-hide">'+formatWfhCell(a.wfh)+'</td>'+
                 '<td class="'+st.css+'">'+st.status+reasonTag+'</td>'+
-                '<td><button class="btn-expand">ACTIONS</button></td></tr>'+
+                '<td style="white-space:nowrap;"><button class="btn-expand">ACTIONS</button><button class="'+noteBtnClass+'" onclick="event.stopPropagation();openNotesModal('+i+')">'+noteBtnLabel+'</button></td></tr>'+
                 '<tr><td colspan="8" style="padding:0;border:0;">'+
                 '<div class="action-tray" id="tray-'+i+'">'+
                 '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">'+
@@ -1430,9 +1624,10 @@ function renderTable() {
                 '<div><strong style="font-size:18px;color:#01CC74">'+a.name+'</strong><br><span style="color:#8090b8;">Level: '+a.level+'</span></div></div>'+
                 '<button onclick="event.stopPropagation();agents['+i+'].fullWeek=!agents['+i+'].fullWeek;agents['+i+'].editing=true;reopenTray('+i+');" style="color:#01CC74;background:rgba(1,204,116,0.1);border:1px solid #01CC74;">'+(agents[i].fullWeek?'EDIT TODAY':'EDIT WEEK')+'</button></div>'+
                 '<div style="display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap;">'+
-                (agents[i].sickUntil||agents[i].ptoUntil?'<button onclick="event.stopPropagation();quickClearStatus('+i+')" style="background:#d32f2f;color:#fff;font-weight:bold;">CLEAR '+(agents[i].sickUntil?'SICK':'PTO')+'</button>':'')+
+                (agents[i].sickUntil||agents[i].ptoUntil||agents[i].wfhUntil?'<button onclick="event.stopPropagation();quickClearStatus('+i+')" style="background:#d32f2f;color:#fff;font-weight:bold;">CLEAR '+(agents[i].sickUntil?'SICK':(agents[i].ptoUntil?'PTO':'WFH'))+'</button>':'')+
                 '<button class="btn-sick" onclick="event.stopPropagation();openOooModal('+i+',\'sick\')">SICK</button>'+
                 '<button class="btn-pto" onclick="event.stopPropagation();openOooModal('+i+',\'pto\')">PTO / OOO</button>'+
+                '<button class="btn-wfh" onclick="event.stopPropagation();openOooModal('+i+',\'wfh\')">WFH</button>'+
                 '<button class="btn-promote" onclick="event.stopPropagation();openPromoteModal('+i+')">PROMOTE</button>'+
                 '<button onclick="event.stopPropagation();openAvatarPicker('+i+')" style="background:rgba(1,204,116,0.1);color:#01CC74;border:1px solid #01CC74;">AVATAR</button>'+
                 '<button onclick="event.stopPropagation();agents['+i+'].editing=true;reopenTray('+i+');" style="background:rgba(1,204,116,0.1);color:#01CC74;border:1px solid #01CC74;">EDIT</button>'+
@@ -1482,7 +1677,7 @@ function saveEdit(idx) {
 function addNewRep() {
     var name=document.getElementById('newName').value;if(!name)return;
     var level=document.getElementById('newLevel').value;
-    var newAgent={id:generateUUID(),name:name,level:level,gender:document.getElementById('newGender').value,wfh:document.getElementById('newWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('newStart').value,document.getElementById('newEnd').value,document.getElementById('newLunch').value)};
+    var newAgent={id:generateUUID(),name:name,level:level,gender:document.getElementById('newGender').value,wfh:document.getElementById('newWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,wfhUntil:null,wfhReason:null,notes:[],editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('newStart').value,document.getElementById('newEnd').value,document.getElementById('newLunch').value)};
     // 1) In-memory mutation
     agents.push(newAgent);
     var idx=agents.length-1;
@@ -1578,11 +1773,12 @@ function renderFloorView() {
             html+='<div style="text-align:center;"><span class="card-status '+st.badge+'">'+st.status+'</span></div>';
             html+=reasonLine;
             html+='<div class="card-actions">';
-            if(a.sickUntil||a.ptoUntil){
-                html+='<button style="background:#d32f2f;color:#fff;font-weight:bold;" onclick="event.stopPropagation();quickClearStatus('+idx+')">CLEAR '+(a.sickUntil?'SICK':'PTO')+'</button>';
+            if(a.sickUntil||a.ptoUntil||a.wfhUntil){
+                html+='<button style="background:#d32f2f;color:#fff;font-weight:bold;" onclick="event.stopPropagation();quickClearStatus('+idx+')">CLEAR '+(a.sickUntil?'SICK':(a.ptoUntil?'PTO':'WFH'))+'</button>';
             }
             html+='<button style="background:rgba(255,68,68,0.8);" onclick="event.stopPropagation();openOooModal('+idx+',\'sick\')">SICK</button>';
             html+='<button style="background:rgba(255,165,0,0.8);" onclick="event.stopPropagation();openOooModal('+idx+',\'pto\')">PTO</button>';
+            html+='<button style="background:rgba(255,215,0,0.85);color:#1a1a1a;font-weight:700;" onclick="event.stopPropagation();openOooModal('+idx+',\'wfh\')">WFH</button>';
             html+='<button style="background:rgba(255,73,152,0.8);" onclick="event.stopPropagation();openMoveModal('+idx+')">MOVE</button>';
             html+='</div></div>';
         });
@@ -1893,16 +2089,49 @@ function saveAvatar(){
 }
 
 // ==================== OOO MODAL ====================
-function openOooModal(idx,type){currentModalAgent=idx;var a=agents[idx];document.getElementById('oooModalTitle').textContent=type==='sick'?'MARK SICK':'MARK PTO / OUT OF OFFICE';document.getElementById('oooModalName').textContent=a.name+' - '+a.level;document.getElementById('oooType').value=type;var today=new Date().toISOString().split('T')[0];document.getElementById('oooStart').value=today;document.getElementById('oooEnd').value=today;document.getElementById('oooReason').value='';renderScheduledPto(idx);var clearBtn=document.getElementById('oooClearBtn');var isOut=!!(a.sickUntil||a.ptoUntil);clearBtn.style.display=isOut?'inline-block':'none';clearBtn.textContent=a.sickUntil?'CLEAR SICK':(a.ptoUntil?'CLEAR PTO':'CLEAR');document.getElementById('oooModal').classList.add('show');}
+function openOooModal(idx,type){
+    currentModalAgent=idx;
+    var a=agents[idx];
+    var title = type==='sick' ? 'MARK SICK'
+              : type==='wfh'  ? 'MARK WFH (TEMPORARY)'
+              : 'MARK PTO / OUT OF OFFICE';
+    document.getElementById('oooModalTitle').textContent=title;
+    document.getElementById('oooModalName').textContent=a.name+' - '+a.level;
+    document.getElementById('oooType').value=type;
+    var today=new Date().toISOString().split('T')[0];
+    document.getElementById('oooStart').value=today;
+    document.getElementById('oooEnd').value=today;
+    document.getElementById('oooReason').value='';
+    renderScheduledPto(idx);
+    var clearBtn=document.getElementById('oooClearBtn');
+    var isOut=!!(a.sickUntil||a.ptoUntil||a.wfhUntil);
+    clearBtn.style.display=isOut?'inline-block':'none';
+    clearBtn.textContent=a.sickUntil?'CLEAR SICK':(a.ptoUntil?'CLEAR PTO':(a.wfhUntil?'CLEAR WFH':'CLEAR'));
+    document.getElementById('oooModal').classList.add('show');
+}
+// Remove any scheduled_pto entries of the given type that cover today. Used
+// when clearing a live sick/pto/wfh so the maintenanceCheck doesn't
+// immediately re-derive the same status from the array.
+function pruneTodayScheduledPto(a, type){
+    if (!a.scheduledPto || a.scheduledPto.length===0) return;
+    var todayStr = new Date().toISOString().split('T')[0];
+    a.scheduledPto = a.scheduledPto.filter(function(p){
+        if (p.type !== type) return true;
+        // keep if the window doesn't include today
+        return !(p.startDate <= todayStr && todayStr <= p.endDate);
+    });
+}
 // Optimistic UI: mutate in memory, render immediately, then persist in the background.
 // The user sees the change in <16ms instead of waiting 2-5s for a full save() round trip.
 function clearOooStatus(){
     if(currentModalAgent<0)return;
     var idx=currentModalAgent;
     var a=agents[idx];
-    var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':'OOO');
-    // 1) In-memory mutation
-    a.sickUntil=null;a.sickReason=null;a.ptoUntil=null;a.ptoReason=null;
+    var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':(a.wfhUntil?'WFH':'OOO'));
+    // 1) In-memory mutation — clear all three live states AND prune their active scheduled entries
+    if (a.sickUntil) { a.sickUntil=null; a.sickReason=null; pruneTodayScheduledPto(a,'sick'); }
+    if (a.ptoUntil)  { a.ptoUntil=null;  a.ptoReason=null;  pruneTodayScheduledPto(a,'pto');  }
+    if (a.wfhUntil)  { a.wfhUntil=null;  a.wfhReason=null;  pruneTodayScheduledPto(a,'wfh');  }
     // 2) Instant UI feedback
     closeModal('oooModal');
     renderAll();
@@ -1912,9 +2141,11 @@ function clearOooStatus(){
 }
 function quickClearStatus(idx){
     var a=agents[idx];if(!a)return;
-    var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':'OOO');
-    // 1) In-memory mutation
-    a.sickUntil=null;a.sickReason=null;a.ptoUntil=null;a.ptoReason=null;
+    var was=a.sickUntil?'SICK':(a.ptoUntil?'PTO':(a.wfhUntil?'WFH':'OOO'));
+    // 1) In-memory mutation — clear all three live states AND prune their active scheduled entries
+    if (a.sickUntil) { a.sickUntil=null; a.sickReason=null; pruneTodayScheduledPto(a,'sick'); }
+    if (a.ptoUntil)  { a.ptoUntil=null;  a.ptoReason=null;  pruneTodayScheduledPto(a,'pto');  }
+    if (a.wfhUntil)  { a.wfhUntil=null;  a.wfhReason=null;  pruneTodayScheduledPto(a,'wfh');  }
     // 2) Instant UI feedback
     renderAll();
     // 3) Background persistence — fire-and-forget
@@ -1933,13 +2164,25 @@ function saveOoo(){
     var reason=document.getElementById('oooReason').value;
     if(!startDate||!endDate){alert('Please select dates.');return;}
     var now=new Date();
-    var endD=new Date(endDate+'T23:59:59');
+    // EOD semantics: inclusive through 23:59:59.999 of end date, local time.
+    var endD=new Date(endDate+'T23:59:59.999');
     var todayStr=now.toISOString().split('T')[0];
     var a=agents[idx];
-    // 1) In-memory mutation
+    // 1) In-memory mutation. WFH is mutually exclusive with sick and pto.
     if(startDate<=todayStr){
-        if(type==='sick'){a.sickUntil=endD.getTime();a.sickReason=reason||null;a.ptoUntil=null;}
-        else{a.ptoUntil=endD.getTime();a.ptoReason=reason||null;a.sickUntil=null;}
+        if(type==='sick'){
+            a.sickUntil=endD.getTime(); a.sickReason=reason||null;
+            a.ptoUntil=null; a.ptoReason=null;
+            a.wfhUntil=null; a.wfhReason=null;
+        } else if (type==='wfh') {
+            a.wfhUntil=endD.getTime(); a.wfhReason=reason||null;
+            a.sickUntil=null; a.sickReason=null;
+            a.ptoUntil=null;  a.ptoReason=null;
+        } else {
+            a.ptoUntil=endD.getTime(); a.ptoReason=reason||null;
+            a.sickUntil=null; a.sickReason=null;
+            a.wfhUntil=null;  a.wfhReason=null;
+        }
         addAuditLog(type,a.name+' marked '+type.toUpperCase()+' from '+startDate+' to '+endDate+(reason?' - Reason: '+reason:''),a.name).catch(function(e){console.error('audit bg error:',e);});
     }
     a.scheduledPto.push({type:type,startDate:startDate,endDate:endDate,reason:reason,createdAt:new Date().toISOString()});
@@ -2008,7 +2251,7 @@ function addReplacement(){
     var name=document.getElementById('repName').value;
     if(!name){alert('Please enter a name.');return;}
     var level=document.getElementById('repLevel').value;
-    var newAgent={id:generateUUID(),name:name,level:level,gender:document.getElementById('repGender').value,wfh:document.getElementById('repWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('repStart').value,document.getElementById('repEnd').value,document.getElementById('repLunch').value)};
+    var newAgent={id:generateUUID(),name:name,level:level,gender:document.getElementById('repGender').value,wfh:document.getElementById('repWFH').value||'-',avatarIndex:Math.floor(Math.random()*8),avatarPhoto:null,sickUntil:null,ptoUntil:null,sickReason:null,ptoReason:null,wfhUntil:null,wfhReason:null,notes:[],editing:false,fullWeek:false,scheduledPto:[],moveHistory:[],area:null,schedule:buildWeek(document.getElementById('repStart').value,document.getElementById('repEnd').value,document.getElementById('repLunch').value)};
     // 1) In-memory mutation
     agents.push(newAgent);
     var idx=agents.length-1;
@@ -2020,6 +2263,74 @@ function addReplacement(){
     // 3) Background persistence
     saveAgentAsync(idx);
     addAuditLog('add',name+' added as replacement ('+level+')',name).catch(function(err){console.error('audit bg error:',err);});
+}
+
+// ==================== NOTES (per-agent timestamped append-only) ====================
+function escNote(s){
+    var t=(s===null||s===undefined)?'':String(s);
+    t=t.split('&').join('&amp;');
+    t=t.split('<').join('&lt;');
+    t=t.split('>').join('&gt;');
+    var DQ=String.fromCharCode(34), SQ=String.fromCharCode(39);
+    t=t.split(DQ).join('&quot;');
+    t=t.split(SQ).join('&#39;');
+    return t;
+}
+function openNotesModal(idx){
+    if(idx<0||idx>=agents.length)return;
+    currentModalAgent=idx;
+    var a=agents[idx];
+    document.getElementById('notesModalName').textContent=a.name+' — '+(a.level||'');
+    var notes=(a.notes&&a.notes.length)?a.notes.slice():[];
+    // Most recent first
+    notes.sort(function(x,y){return (y&&y.ts?y.ts:'').localeCompare(x&&x.ts?x.ts:'');});
+    var host=document.getElementById('notesHistory');
+    var bannerHtml='';
+    if(!NOTES_COL_AVAILABLE){
+        bannerHtml='<div style="background:rgba(255,215,0,0.1); border:1px solid #ffd700; color:#ffd700; padding:10px 12px; border-radius:6px; font-size:11px; margin-bottom:10px; line-height:1.4;">The notes column hasn\u2019t been added to the database yet. Ask an admin to run <code style="background:rgba(0,0,0,0.25); padding:1px 4px; border-radius:3px;">migrations/001_add_notes_column.sql</code> in the Supabase SQL editor. Until then, notes cannot be saved.</div>';
+    }
+    if(notes.length===0){
+        host.innerHTML=bannerHtml+'<div style="color:#8090b8; font-size:12px; text-align:center; padding:18px;">No notes yet. Add the first one below.</div>';
+    } else {
+        var h=bannerHtml;
+        for(var i=0;i<notes.length;i++){
+            var n=notes[i]||{};
+            var when='';
+            try{when=new Date(n.ts).toLocaleString();}catch(e){when=n.ts||'';}
+            h+='<div class="note-entry"><div class="note-time">'+escNote(when)+'</div><div class="note-text">'+escNote(n.text||'').replace(/\n/g,'<br>')+'</div></div>';
+        }
+        host.innerHTML=h;
+    }
+    document.getElementById('newNoteText').value='';
+    // Disable the save path when the column isn't there — prevents an optimistic
+    // UI update followed by a silent background 42703 that would lose the note.
+    try{
+        var ta0=document.getElementById('newNoteText');
+        if(ta0){ta0.disabled=!NOTES_COL_AVAILABLE; ta0.placeholder=NOTES_COL_AVAILABLE?'Type a new note\u2026 (it will be time-stamped on save)':'Notes are disabled until the migration is applied.';}
+    }catch(e){}
+    document.getElementById('notesModal').classList.add('show');
+    setTimeout(function(){try{if(NOTES_COL_AVAILABLE)document.getElementById('newNoteText').focus();}catch(e){}},50);
+}
+function saveNote(){
+    if(currentModalAgent<0)return;
+    if(!NOTES_COL_AVAILABLE){
+        showBanner('Notes cannot be saved until the database migration is applied.','warn');
+        return;
+    }
+    var idx=currentModalAgent;
+    var ta=document.getElementById('newNoteText');
+    var val=(ta&&ta.value?ta.value:'').replace(/\s+$/,'').replace(/^\s+/,'');
+    if(!val){try{ta.focus();}catch(e){}return;}
+    var a=agents[idx];
+    if(!a.notes||!a.notes.length)a.notes=[];
+    var entry={ts:new Date().toISOString(),text:val};
+    a.notes.push(entry);
+    // 1) Instant UI feedback: close modal, re-render to update NOTES count badge
+    closeModal('notesModal');
+    renderAll();
+    // 2) Background persistence
+    saveAgentAsync(idx);
+    addAuditLog('note','Note added for '+a.name+': '+val.slice(0,80)+(val.length>80?'…':''),a.name).catch(function(err){console.error('audit bg error:',err);});
 }
 
 // ==================== AUDIT ====================
@@ -2037,7 +2348,7 @@ function renderAll(){
     try{renderAreasView();}catch(e){console.warn('renderAreasView failed',e);}
 }
 function exportData(){var d={agents:agents,floorAreas:floorAreas,auditLogs:auditLogs,openSpots:openSpots,version:3};navigator.clipboard.writeText(JSON.stringify(d)).then(function(){alert("Copied.");});}
-async function importData(){var d=prompt("Paste exported data:");if(!d)return;try{var p=JSON.parse(d);if(p.version>=2){agents=p.agents||[];floorAreas=p.floorAreas||[];auditLogs=p.auditLogs||[];openSpots=p.openSpots||[];}else{agents=p;}agents.forEach(function(a){if(!a.id)a.id=generateUUID();if(!a.scheduledPto)a.scheduledPto=[];if(!a.moveHistory)a.moveHistory=[];if(!a.area)a.area=null;if(!a.gender)a.gender='male';if(a.avatarIndex===undefined)a.avatarIndex=0;if(!a.avatarPhoto)a.avatarPhoto=null;});await save();renderAll();alert("Imported.");}catch(e){alert("Invalid data.");}}
+async function importData(){var d=prompt("Paste exported data:");if(!d)return;try{var p=JSON.parse(d);if(p.version>=2){agents=p.agents||[];floorAreas=p.floorAreas||[];auditLogs=p.auditLogs||[];openSpots=p.openSpots||[];}else{agents=p;}agents.forEach(function(a){if(!a.id)a.id=generateUUID();if(!a.scheduledPto)a.scheduledPto=[];if(!a.moveHistory)a.moveHistory=[];if(!a.notes)a.notes=[];if(!a.area)a.area=null;if(!a.gender)a.gender='male';if(a.avatarIndex===undefined)a.avatarIndex=0;if(!a.avatarPhoto)a.avatarPhoto=null;});await save();renderAll();alert("Imported.");}catch(e){alert("Invalid data.");}}
 
 function updateClock(){if(!currentUser)return;var t=new Date().toLocaleTimeString();document.getElementById('clock').innerText=t;document.getElementById('navClock').innerText=t;if(new Date().getSeconds()===0){maintenanceCheck();renderAll();}}
 
