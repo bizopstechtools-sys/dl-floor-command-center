@@ -1342,12 +1342,22 @@ function maintenanceCheck() {
 }
 
 // Serialize one agent for the DB. Kept as a helper so saveAgent() and save() stay in sync.
+//
+// CRITICAL: this function MUST NOT include avatar_photo. The agents SELECT no
+// longer pulls avatar_photo (it's lazy-loaded by hydrateAvatarPhotos after
+// first paint), so in-memory agents have avatarPhoto=null until hydration
+// completes. If agentToRow wrote avatar_photo, any upsert that happens before
+// hydration — including the daily maintenanceCheck() -> save() path — would
+// clobber every photo in the database to NULL. The "Save Avatar" flow has its
+// own targeted update (see saveAvatar/saveAvatarPhotoOnly below) that is the
+// ONLY place allowed to touch the avatar_photo column.
+// (2026-04-10 incident: a prior deploy nulled all 24 photos via this race.)
 function agentToRow(a) {
     if (!a.id) a.id = generateUUID();
     var row = {
         id: a.id, name: a.name, level: a.level, wfh: a.wfh || '-',
         gender: a.gender || 'male', avatar_index: a.avatarIndex || 0,
-        avatar_photo: a.avatarPhoto || null,
+        // avatar_photo INTENTIONALLY OMITTED — see comment block above.
         sick_until: a.sickUntil || null, pto_until: a.ptoUntil || null,
         sick_reason: a.sickReason || null, pto_reason: a.ptoReason || null,
         area: a.area || null, full_week: a.fullWeek || false,
@@ -1359,6 +1369,24 @@ function agentToRow(a) {
     // errors on every upsert and would break SICK/PTO/rename/promote flows.
     if (NOTES_COL_AVAILABLE) row.notes = a.notes || [];
     return row;
+}
+
+// The ONE place allowed to write the avatar_photo column. A targeted update,
+// not an upsert, so it can't accidentally touch any other column. Called only
+// from saveAvatar() when the user clicks SAVE AVATAR in the avatar modal.
+async function saveAvatarPhotoOnly(idx) {
+    var a = agents[idx];
+    if (!a || !a.id) return;
+    _saving = true;
+    try {
+        await sb.from('agents').update({
+            avatar_photo: a.avatarPhoto || null,
+            avatar_index: a.avatarIndex || 0,
+            gender: a.gender || 'male'
+        }).eq('id', a.id);
+    } finally {
+        _saving = false;
+    }
 }
 
 // Single-agent upsert — ~100ms round trip instead of 2-5 seconds for all 23.
@@ -2084,8 +2112,12 @@ function saveAvatar(){
     // 2) Instant UI feedback
     closeModal('avatarModal');
     renderAll();
-    // 3) Background persistence
-    saveAgentAsync(idx);
+    // 3) Background persistence — use the targeted photo-only update, NOT
+    // saveAgentAsync. agentToRow deliberately omits avatar_photo, so a full
+    // upsert here would leave the new photo stranded in memory and never
+    // written to the DB. saveAvatarPhotoOnly is the only write path allowed
+    // to touch the avatar_photo column. (2026-04-10 incident fix.)
+    saveAvatarPhotoOnly(idx).catch(function(err){ console.error('saveAvatarPhotoOnly bg error:',err); });
 }
 
 // ==================== OOO MODAL ====================
