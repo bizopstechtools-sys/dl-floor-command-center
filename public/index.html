@@ -1389,14 +1389,19 @@ async function saveAvatarPhotoOnly(idx) {
     }
 }
 
-// Single-agent upsert — ~100ms round trip instead of 2-5 seconds for all 23.
-// Use this for targeted mutations (clear SICK, mark PTO, level change, etc.)
-// rather than calling the monolithic save() which re-upserts every agent.
+// Single-agent UPDATE — targets a known row by id and only touches the
+// columns present in agentToRow(). Uses .update().eq('id',...) instead of
+// .upsert() because PostgREST upsert nulls columns omitted from the
+// payload (discovered 2026-04-13: .upsert was clobbering avatar_photo to
+// NULL even though the column was not in the payload). .update() physically
+// cannot touch columns not in the payload.
 async function saveAgent(idx) {
     if (idx < 0 || !agents[idx]) return;
     _saving = true;
     try {
-        await sb.from('agents').upsert(agentToRow(agents[idx]));
+        var a = agents[idx];
+        if (!a.id) a.id = generateUUID();
+        await sb.from('agents').update(agentToRow(a)).eq('id', a.id);
     } finally {
         _saving = false;
     }
@@ -1406,6 +1411,24 @@ async function saveAgent(idx) {
 // promise runs in the background. Errors are logged to console for debugging.
 function saveAgentAsync(idx) {
     saveAgent(idx).catch(function(err) { console.error('saveAgent bg error:', err); });
+}
+
+// INSERT a brand-new agent row. Used only by addNewRep() and addReplacement()
+// when creating agents that don't exist in the DB yet. New agents have no
+// photo, so avatar_photo defaulting to NULL on insert is correct.
+async function insertAgent(idx) {
+    if (idx < 0 || !agents[idx]) return;
+    _saving = true;
+    try {
+        var a = agents[idx];
+        if (!a.id) a.id = generateUUID();
+        await sb.from('agents').insert(agentToRow(a));
+    } finally {
+        _saving = false;
+    }
+}
+function insertAgentAsync(idx) {
+    insertAgent(idx).catch(function(err) { console.error('insertAgent bg error:', err); });
 }
 
 // Single-agent delete — use this instead of save() when terminating an agent
@@ -1465,11 +1488,13 @@ async function save() {
     // Guard: set _saving so realtime reloadQuiet skips while we're upserting.
     _saving = true;
     try {
-    // Upsert agents to Supabase
+    // UPDATE agents to Supabase (NOT upsert — PostgREST upsert nulls omitted
+    // columns like avatar_photo, which destroyed uploaded photos on every daily
+    // maintenance cycle. .update().eq('id',...) only touches columns in the payload.)
     for (var i=0; i<agents.length; i++) {
         var a = agents[i];
         if (!a.id) a.id = generateUUID();
-        await sb.from('agents').upsert(agentToRow(a));
+        await sb.from('agents').update(agentToRow(a)).eq('id', a.id);
     }
     // Sync floor areas
     for (var j=0; j<floorAreas.length; j++) {
@@ -1712,8 +1737,8 @@ function addNewRep() {
     document.getElementById('newName').value='';
     // 2) Instant UI feedback
     renderAll();
-    // 3) Background persistence
-    saveAgentAsync(idx);
+    // 3) Background persistence — INSERT (not update) because this is a new row.
+    insertAgentAsync(idx);
     addAuditLog('add',name+' added to floor as '+level,name).catch(function(err){console.error('audit bg error:',err);});
 }
 
@@ -2292,8 +2317,8 @@ function addReplacement(){
     // 2) Instant UI feedback
     closeModal('replacementModal');
     renderAll();
-    // 3) Background persistence
-    saveAgentAsync(idx);
+    // 3) Background persistence — INSERT (not update) because this is a new row.
+    insertAgentAsync(idx);
     addAuditLog('add',name+' added as replacement ('+level+')',name).catch(function(err){console.error('audit bg error:',err);});
 }
 
